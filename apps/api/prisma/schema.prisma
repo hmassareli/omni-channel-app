@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// CORE: PESSOAS E IDENTIDADES
+// ============================================================================
+
+// O "Contato" unificado. Uma pessoa real.
+model Contact {
+  id        String   @id @default(uuid())
+  name      String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // CRM / Funil
+  stageId String?
+  stage   Stage?  @relation(fields: [stageId], references: [id])
+
+  // Relacionamentos
+  identities Identity[]
+  events     TimelineEvent[]
+  tags       ContactTag[]
+
+  @@map("contacts")
+}
+
+// Identificadores do contato (Telefone, Email, Instagram ID, etc)
+model Identity {
+  id        String       @id @default(uuid())
+  type      IdentityType // WHATSAPP, EMAIL, INSTAGRAM
+  value     String       // O número (+55...), o email, etc.
+  contactId String
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([type, value]) // Não pode ter o mesmo número cadastrado 2x como identidade
+  @@map("identities")
+}
+
+enum IdentityType {
+  WHATSAPP
+  EMAIL
+  INSTAGRAM
+}
+
+// ============================================================================
+// CRM: FUNIL E TAGS
+// ============================================================================
+
+// Etapas do Funil (Ex: "Novo Lead", "Qualificado", "Proposta", "Fechado")
+model Stage {
+  id    String @id @default(uuid())
+  name  String
+  order Int    @default(0)
+  color String? // Hex code para UI
+
+  contacts Contact[]
+
+  @@map("stages")
+}
+
+// Tags (Ex: "VIP", "Não Perturbe", "Cliente Antigo")
+model Tag {
+  id    String @id @default(uuid())
+  name  String @unique
+  color String?
+
+  contacts ContactTag[]
+
+  @@map("tags")
+}
+
+// Tabela pivo para Many-to-Many entre Contact e Tag
+model ContactTag {
+  contactId String
+  tagId     String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([contactId, tagId])
+  @@map("contact_tags")
+}
+
+// ============================================================================
+// TIMELINE: O CORAÇÃO DO SISTEMA
+// ============================================================================
+
+// Tudo que acontece com o contato vira um evento na timeline.
+// Isso unifica mensagens, notas internas, mudanças de estágio, logs de chamadas.
+model TimelineEvent {
+  id        String    @id @default(uuid())
+  contactId String
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  
+  type      EventType // MESSAGE_SENT, MESSAGE_RECEIVED, NOTE, STAGE_CHANGE, CALL
+  content   String    // O texto da mensagem, ou o conteúdo da nota
+  metadata  Json?     // Dados extras (Ex: ID da mensagem no WhatsApp, duração da chamada)
+  
+  occurredAt DateTime @default(now()) // Quando aconteceu (pode ser diferente de createdAt se importarmos histórico)
+  createdAt  DateTime @default(now())
+
+  @@index([contactId, occurredAt])
+  @@map("timeline_events")
+}
+
+enum EventType {
+  MESSAGE_SENT
+  MESSAGE_RECEIVED
+  NOTE
+  STAGE_CHANGE
+  CALL_LOG
+  SYSTEM_LOG
+}
+
+// ============================================================================
+// RAW DATA: AUDITORIA E DEBUG (Opcional, mas recomendado)
+// ============================================================================
+
+// Armazena o payload cru do WhatsApp para garantir que nunca perdemos dados originais.
+// Útil se precisarmos reprocessar algo ou debugar o n8n.
+model RawWhatsappMessage {
+  id        String   @id @default(uuid())
+  wahaId    String?  @unique // ID da mensagem no WAHA/WhatsApp
+  payload   Json     // O JSON completo que veio do webhook
+  processed Boolean  @default(false)
+  
+  receivedAt DateTime @default(now())
+
+  @@map("raw_whatsapp_messages")
+}

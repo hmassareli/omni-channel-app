@@ -1,0 +1,13 @@
+{
+  "name": "omni-channel-app",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces"
+  }
+}

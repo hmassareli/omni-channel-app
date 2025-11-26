@@ -1,0 +1,29 @@
+{
+  "name": "@omni/api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "exports": {
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "db:migrate": "dotenv -e .env -- prisma migrate dev",
+    "db:studio": "dotenv -e .env -- prisma studio",
+    "db:generate": "dotenv -e .env -- prisma generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@prisma/client": "^7.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "dotenv-cli": "^11.0.0",
+    "prisma": "^7.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

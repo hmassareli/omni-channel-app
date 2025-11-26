@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "n8n-mcp": {
+      "type": "http",
+      "url": "https://api.n8n-mcp.com/mcp",
+      "headers": {
+        "Authorization": "Bearer nmcp_159829f26396b16e2aac3833518712dfae322f6626012b31c2c4b10c7b6d5ca3"
+      }
+    },
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=posqlijlvorsaiggntft"
+    }
+  }
+}
