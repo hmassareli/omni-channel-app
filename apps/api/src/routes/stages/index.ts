@@ -16,7 +16,7 @@ const createStageSchema = z.object({
       "Slug deve conter apenas letras minúsculas, números e hífens"
     )
     .optional(),
-  operationId: z.string().min(1, "operationId é obrigatório"),
+  operationId: z.string().uuid("operationId deve ser um UUID válido"),
   order: z.number().int().min(0).optional(),
   color: z
     .string()
@@ -47,8 +47,10 @@ const stageQuerySchema = z.object({
 });
 
 const reorderStagesSchema = z.object({
-  operationId: z.string().min(1, "operationId é obrigatório"),
-  stageIds: z.array(z.uuid()).min(1, "Pelo menos um stage é necessário"),
+  operationId: z.string().uuid("operationId deve ser um UUID válido"),
+  stageIds: z
+    .array(z.uuid("stageId deve ser um UUID válido"))
+    .min(1, "Pelo menos um stage é necessário"),
 });
 
 // ============================================================================

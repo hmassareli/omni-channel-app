@@ -6,6 +6,7 @@ import {
   validatorCompiler,
   ZodTypeProvider,
 } from "fastify-type-provider-zod";
+import { ZodError } from "zod";
 import { prisma } from "./prisma";
 
 // Routes
@@ -21,46 +22,63 @@ import { registerWhatsappWebhookRoutes } from "./routes/webhooks/whatsapp";
 
 dotenv.config();
 
-const app = fastify().withTypeProvider<ZodTypeProvider>();
+/**
+ * Cria e configura a instância do Fastify.
+ * Exportado para ser usado nos testes.
+ */
+export async function buildApp() {
+  const app = fastify().withTypeProvider<ZodTypeProvider>();
 
-app.setValidatorCompiler(validatorCompiler);
-app.setSerializerCompiler(serializerCompiler);
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
 
-app.register(cors, {
-  origin: "*", // Em produção, mude para a URL do seu frontend
-});
+  // Error handler global para erros de validação Zod
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.status(400).send({
+        error: "Erro de validação",
+        details: error.issues,
+      });
+    }
+    // Re-throw para o handler padrão
+    reply.send(error);
+  });
 
-app.decorate("prisma", prisma);
+  await app.register(cors, {
+    origin: "*", // Em produção, mude para a URL do seu frontend
+  });
 
-app.addHook("onClose", async (instance) => {
-  await instance.prisma.$disconnect();
-});
+  app.decorate("prisma", prisma);
 
-app.get("/", async () => {
-  return { message: "Hello from Omni API" };
-});
+  app.addHook("onClose", async (instance) => {
+    await instance.prisma.$disconnect();
+  });
 
-// Rotas de webhook (WAHA, etc)
-app.register(registerWhatsappWebhookRoutes, { prefix: "/webhooks" });
+  app.get("/", async () => {
+    return { message: "Hello from Omni API" };
+  });
 
-// Rotas de entidades
-app.register(operationsRoutes, { prefix: "/operations" });
-app.register(channelsRoutes, { prefix: "/channels" });
-app.register(usersRoutes, { prefix: "/users" });
-app.register(agentsRoutes, { prefix: "/agents" });
-app.register(tagsRoutes, { prefix: "/tags" });
-app.register(stagesRoutes, { prefix: "/stages" });
-app.register(contactsRoutes, { prefix: "/contacts" });
-app.register(conversationsRoutes, { prefix: "/conversations" });
+  // Rotas de webhook (WAHA, etc)
+  await app.register(registerWhatsappWebhookRoutes, { prefix: "/webhooks" });
 
-const start = async () => {
-  try {
-    await app.listen({ port: 3333 });
-    console.log("HTTP server running on http://localhost:3333");
-  } catch (err) {
-    app.log.error(err);
-    process.exit(1);
-  }
-};
+  // Rotas de entidades
+  await app.register(operationsRoutes, { prefix: "/operations" });
+  await app.register(channelsRoutes, { prefix: "/channels" });
+  await app.register(usersRoutes, { prefix: "/users" });
+  await app.register(agentsRoutes, { prefix: "/agents" });
+  await app.register(tagsRoutes, { prefix: "/tags" });
+  await app.register(stagesRoutes, { prefix: "/stages" });
+  await app.register(contactsRoutes, { prefix: "/contacts" });
+  await app.register(conversationsRoutes, { prefix: "/conversations" });
 
-start();
+  return app;
+}
+
+// Só inicia o servidor se executado diretamente (não em testes)
+if (require.main === module) {
+  buildApp().then((app) => {
+    app.listen({ port: 3333 }).then(() => {
+      console.log("HTTP server running on http://localhost:3333");
+    });
+  });
+}
