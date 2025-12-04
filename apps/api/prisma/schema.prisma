@@ -23,9 +23,12 @@ model Contact {
   stage   Stage?  @relation(fields: [stageId], references: [id])
 
   // Relacionamentos
-  identities Identity[]
-  events     TimelineEvent[]
-  tags       ContactTag[]
+  identities    Identity[]
+  events        TimelineEvent[]
+  tags          ContactTag[]
+  conversations Conversation[]
+  messages      Message[]
+  insights      ContactInsight[]
 
   @@map("contacts")
 }
@@ -34,11 +37,13 @@ model Contact {
 model Identity {
   id        String       @id @default(uuid())
   type      IdentityType // WHATSAPP, EMAIL, INSTAGRAM
-  value     String       // O número (+55...), o email, etc.
+  value     String // O número (+55...), o email, etc.
   contactId String
   contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+
+  messages Message[]
 
   @@unique([type, value]) // Não pode ter o mesmo número cadastrado 2x como identidade
   @@map("identities")
@@ -56,33 +61,60 @@ enum IdentityType {
 
 // Etapas do Funil (Ex: "Novo Lead", "Qualificado", "Proposta", "Fechado")
 model Stage {
-  id    String @id @default(uuid())
-  name  String
-  order Int    @default(0)
-  color String? // Hex code para UI
+  id              String   @id @default(uuid())
+  operationId     String?
+  name            String
+  slug            String
+  order           Int      @default(0)
+  color           String?
+  promptCondition String?
+  autoTransition  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  contacts Contact[]
+  operation Operation? @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  contacts  Contact[]
 
-  @@map("stages")
+  @@unique([operationId, slug])
+  @@map("omni_stages")
 }
 
 // Tags (Ex: "VIP", "Não Perturbe", "Cliente Antigo")
 model Tag {
-  id    String @id @default(uuid())
-  name  String @unique
-  color String?
+  id              String   @id @default(uuid())
+  operationId     String?
+  slug            String
+  name            String
+  description     String?
+  color           String?
+  promptCondition String?
+  isDefault       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  contacts ContactTag[]
+  operation Operation?   @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  contacts  ContactTag[]
 
-  @@map("tags")
+  @@unique([operationId, slug])
+  @@map("omni_tag_definitions")
+}
+
+enum TagSource {
+  AI
+  USER
+  SYSTEM
 }
 
 // Tabela pivo para Many-to-Many entre Contact e Tag
 model ContactTag {
   contactId String
   tagId     String
-  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  source    TagSource @default(USER)
+  note      String?
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   assignedAt DateTime @default(now())
 
@@ -97,18 +129,21 @@ model ContactTag {
 // Tudo que acontece com o contato vira um evento na timeline.
 // Isso unifica mensagens, notas internas, mudanças de estágio, logs de chamadas.
 model TimelineEvent {
-  id        String    @id @default(uuid())
-  contactId String
-  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  
-  type      EventType // MESSAGE_SENT, MESSAGE_RECEIVED, NOTE, STAGE_CHANGE, CALL
-  content   String    // O texto da mensagem, ou o conteúdo da nota
-  metadata  Json?     // Dados extras (Ex: ID da mensagem no WhatsApp, duração da chamada)
-  
+  id             String        @id @default(uuid())
+  contactId      String
+  contact        Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  type     EventType // MESSAGE_SENT, MESSAGE_RECEIVED, NOTE, STAGE_CHANGE, CALL
+  content  String // O texto da mensagem, ou o conteúdo da nota
+  metadata Json? // Dados extras (Ex: ID da mensagem no WhatsApp, duração da chamada)
+
   occurredAt DateTime @default(now()) // Quando aconteceu (pode ser diferente de createdAt se importarmos histórico)
   createdAt  DateTime @default(now())
 
   @@index([contactId, occurredAt])
+  @@index([conversationId, occurredAt])
   @@map("timeline_events")
 }
 
@@ -128,12 +163,225 @@ enum EventType {
 // Armazena o payload cru do WhatsApp para garantir que nunca perdemos dados originais.
 // Útil se precisarmos reprocessar algo ou debugar o n8n.
 model RawWhatsappMessage {
-  id        String   @id @default(uuid())
-  wahaId    String?  @unique // ID da mensagem no WAHA/WhatsApp
-  payload   Json     // O JSON completo que veio do webhook
-  processed Boolean  @default(false)
-  
+  id        String  @id @default(uuid())
+  wahaId    String? @unique // ID da mensagem no WAHA/WhatsApp
+  payload   Json // O JSON completo que veio do webhook
+  processed Boolean @default(false)
+
   receivedAt DateTime @default(now())
 
   @@map("raw_whatsapp_messages")
+}
+
+// ============================================================================
+// OMNICHANNEL CORE
+// ============================================================================
+
+model Operation {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  channels           Channel[]
+  tags               Tag[]
+  insightDefinitions InsightDefinition[]
+  stages             Stage[]
+  users              User[]
+  agents             Agent[]
+
+  @@map("omni_operations")
+}
+
+// ============================================================================
+// USER & AGENT: CONTROLE DE ACESSO E ATENDIMENTO
+// ============================================================================
+
+enum UserRole {
+  ADMIN // Acesso total ao sistema
+  MANAGER // Gerencia operação, vê todos os atendentes
+  AGENT // Atendente, vê apenas seus canais/conversas
+}
+
+// Usuário do sistema (quem faz login)
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  name        String
+  role        UserRole @default(AGENT)
+  operationId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  operation Operation? @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  agent     Agent? // Se role=AGENT, terá um Agent vinculado
+
+  @@map("omni_users")
+}
+
+// Atendente (quem atende no WhatsApp)
+// Separado de User para permitir que um gerente gerencie múltiplos atendentes
+model Agent {
+  id          String   @id @default(uuid())
+  name        String
+  avatarUrl   String?
+  userId      String?  @unique // Pode ou não ter um User vinculado
+  operationId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  channels  Channel[]
+
+  @@map("omni_agents")
+}
+
+enum ChannelType {
+  WHATSAPP
+  EMAIL
+  INSTAGRAM
+  SMS
+  OTHER
+}
+
+enum ChannelStatus {
+  PENDING // Aguardando configuração/conexão
+  CONNECTING // Conectando
+  WORKING // Funcionando normalmente
+  FAILED // Falhou (precisa reconectar)
+  STOPPED // Parado manualmente
+}
+
+model Channel {
+  id                 String        @id @default(uuid())
+  name               String
+  type               ChannelType
+  status             ChannelStatus @default(PENDING)
+  externalIdentifier String?       @unique // Phone number, email, etc.
+  metadata           Json? // Dados genéricos extras
+  operationId        String?
+  agentId            String? // null = canal compartilhado
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  operation       Operation?       @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  agent           Agent?           @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  conversations   Conversation[]
+  whatsappDetails WhatsAppChannel? // Detalhes específicos se type=WHATSAPP
+
+  @@map("omni_channels")
+}
+
+// Detalhes específicos para canais WhatsApp (WAHA)
+model WhatsAppChannel {
+  id            String   @id @default(uuid())
+  channelId     String   @unique
+  sessionName   String   @unique // Nome da sessão no WAHA
+  webhookUrl    String? // URL de webhook configurada
+  proxySession  String? // Sessão de proxy se usar
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@map("omni_whatsapp_channels")
+}
+
+model Conversation {
+  id                     String    @id @default(uuid())
+  contactId              String
+  channelId              String
+  externalId             String?
+  subject                String?
+  summary                String?
+  lastSummaryHash        String?
+  firstMessageAt         DateTime
+  lastMessageAt          DateTime
+  firstInboundMessageAt  DateTime?
+  firstOutboundMessageAt DateTime?
+  firstResponseAt        DateTime?
+  isStartedByContact     Boolean?
+  timeToFirstInteraction Int?
+  lastAnalysisAt         DateTime?
+  needsAnalysis          Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  messages Message[]
+  events   TimelineEvent[]
+
+  @@index([contactId, channelId])
+  @@index([needsAnalysis])
+  @@map("omni_conversations")
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model Message {
+  id                 String           @id @default(uuid())
+  conversationId     String
+  contactId          String?
+  identityId         String?
+  direction          MessageDirection
+  content            String?
+  hasMedia           Boolean          @default(false)
+  payload            Json?
+  externalId         String?
+  sentAt             DateTime
+  processedAt        DateTime?
+  requiresProcessing Boolean          @default(true)
+  metadata           Json?
+  createdAt          DateTime         @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  identity     Identity?    @relation(fields: [identityId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, externalId])
+  @@index([conversationId, sentAt])
+  @@index([requiresProcessing])
+  @@map("omni_messages")
+}
+
+model InsightDefinition {
+  id                String   @id @default(uuid())
+  operationId       String?
+  slug              String
+  name              String
+  description       String?
+  promptInstruction String?
+  schema            Json?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  operation Operation?       @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  insights  ContactInsight[]
+
+  @@unique([operationId, slug])
+  @@map("omni_insight_definitions")
+}
+
+model ContactInsight {
+  id           String    @id @default(uuid())
+  contactId    String
+  definitionId String
+  payload      Json?
+  confidence   Float?
+  generatedAt  DateTime  @default(now())
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  contact    Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  definition InsightDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, definitionId])
+  @@map("omni_contact_insights")
 }
