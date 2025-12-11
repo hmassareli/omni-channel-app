@@ -22,6 +22,10 @@ model Contact {
   stageId String?
   stage   Stage?  @relation(fields: [stageId], references: [id])
 
+  // Relacionamento com empresa (CNPJ)
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
   // Relacionamentos
   identities    Identity[]
   events        TimelineEvent[]
@@ -31,6 +35,66 @@ model Contact {
   insights      ContactInsight[]
 
   @@map("contacts")
+}
+
+// Dados de empresa (CNPJ) - baseado na API CNPJA
+model Company {
+  id        String   @id @default(uuid())
+  
+  // Identificação
+  taxId           String   @unique // CNPJ (ex: 37335118000180)
+  name            String   // Razão Social (company.name)
+  alias           String?  // Nome Fantasia
+  
+  // Status e datas
+  status          String?  // Situação cadastral (ex: "Ativa", "Baixada")
+  statusId        Int?     // ID do status
+  statusDate      DateTime? // Data da situação cadastral
+  founded         DateTime? // Data de abertura
+  head            Boolean  @default(true) // Se é matriz
+  
+  // Porte e natureza
+  equity          Decimal? // Capital social
+  sizeId          Int?     // ID do porte
+  sizeAcronym     String?  // ME, EPP, etc.
+  sizeText        String?  // Microempresa, etc.
+  natureId        Int?     // ID natureza jurídica
+  natureText      String?  // Sociedade Empresária Limitada, etc.
+  
+  // CNAE - Atividade econômica
+  mainActivityId   Int?    // CNAE principal ID
+  mainActivityText String? // Descrição CNAE principal
+  sideActivities   Json?   // Array de CNAEs secundários [{id, text}]
+  
+  // Endereço
+  addressStreet       String?
+  addressNumber       String?
+  addressDetails      String? // Complemento
+  addressDistrict     String? // Bairro
+  addressCity         String?
+  addressState        String? // UF
+  addressZip          String? // CEP
+  addressMunicipality Int?    // Código IBGE
+  addressCountryId    Int?
+  addressCountryName  String?
+  
+  // Contatos
+  phones Json? // Array [{type, area, number}]
+  emails Json? // Array [{ownership, address, domain}]
+  
+  // Sócios/Membros
+  members Json? // Array [{since, role: {id, text}, person: {id, name, type, taxId, age}}]
+  
+  // Controle interno
+  sourceApi       String?  @default("CNPJA") // Fonte dos dados
+  apiUpdatedAt    DateTime? // updated da API
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relacionamentos
+  contacts Contact[]
+  
+  @@map("companies")
 }
 
 // Identificadores do contato (Telefone, Email, Instagram ID, etc)
