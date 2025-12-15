@@ -174,31 +174,50 @@ export async function logoutSession(sessionName: string): Promise<void> {
 /**
  * Obtém o QR code para autenticação
  * @param sessionName Nome da sessão
- * @param format "image" retorna base64, "raw" retorna string do QR
+ * @param format "image" retorna imagem PNG, "raw" retorna JSON com string do QR
  */
 export async function getQRCode(
   sessionName: string,
   format: "image" | "raw" = "image"
 ): Promise<WAHAQRCode> {
-  return wahaRequest<WAHAQRCode>(
-    "GET",
-    `/api/${sessionName}/auth/qr?format=${format}`
-  );
+  if (!WAHA_API_URL) {
+    throw new Error("WAHA_API_URL não configurada");
+  }
+
+  const url = `${WAHA_API_URL}/api/${sessionName}/auth/qr?format=${format}`;
+
+  const response = await request(url, {
+    method: "GET",
+    headers: getHeaders(),
+  });
+
+  if (response.statusCode >= 400) {
+    // Tenta ler como JSON para pegar a mensagem de erro
+    try {
+      const error = (await response.body.json()) as WAHAError;
+      throw new Error(
+        `WAHA Error: ${error.message || error.error || "Unknown error"}`
+      );
+    } catch {
+      throw new Error(`WAHA Error: HTTP ${response.statusCode}`);
+    }
+  }
+
+  if (format === "image") {
+    // Quando format=image, WAHA retorna PNG binário
+    const buffer = Buffer.from(await response.body.arrayBuffer());
+    const base64 = buffer.toString("base64");
+    return {
+      value: "", // Não temos o valor raw quando pedimos imagem
+      mimetype: "image/png",
+      data: base64,
+    };
+  } else {
+    // Quando format=raw, retorna JSON
+    return (await response.body.json()) as WAHAQRCode;
+  }
 }
 
-/**
- * Solicita código de pareamento (alternativa ao QR code)
- */
-export async function requestPairingCode(
-  sessionName: string,
-  phoneNumber: string
-): Promise<{ code: string }> {
-  return wahaRequest<{ code: string }>(
-    "POST",
-    `/api/${sessionName}/auth/request-code`,
-    { phoneNumber }
-  );
-}
 
 // ============================================================================
 // Session Status Helpers

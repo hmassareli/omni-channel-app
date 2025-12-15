@@ -1,8 +1,10 @@
 import { LogOut } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { LoginPage } from "./components/LoginPage";
 import { AuthCallback } from "./components/AuthCallback";
 import { ContactTimeline } from "./pages/ContactTimeline";
+import { OnboardingPage } from "./features/onboarding";
 
 // --- Componentes de Layout ---
 
@@ -87,10 +89,13 @@ const LoadingScreen = () => (
 );
 
 // --- Roteamento Simples ---
-function getRoute(): "callback" | "contact" | "home" {
+function getRoute(): "callback" | "contact" | "onboarding" | "home" {
   const path = window.location.pathname;
   if (path.startsWith("/auth/callback")) {
     return "callback";
+  }
+  if (path.startsWith("/onboarding")) {
+    return "onboarding";
   }
   if (path.startsWith("/contact")) {
     return "contact";
@@ -102,9 +107,53 @@ function getRoute(): "callback" | "contact" | "home" {
 function Dashboard() {
   const { user, signOut } = useAuth();
   const route = getRoute();
+  
+  // Estado para controlar se precisa fazer onboarding
+  // TODO: Buscar da API se o usuário já tem operação configurada
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+
+  useEffect(() => {
+    // Simula verificação se usuário precisa de onboarding
+    // TODO: Substituir por chamada real à API
+    const checkOnboarding = async () => {
+      // const hasOperation = await api.getUserOperation();
+      // setNeedsOnboarding(!hasOperation);
+      
+      // Por enquanto, verifica localStorage
+      const onboardingComplete = localStorage.getItem('onboarding_complete');
+      setNeedsOnboarding(!onboardingComplete);
+      setCheckingOnboarding(false);
+    };
+    
+    checkOnboarding();
+  }, []);
 
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name;
   const userEmail = user?.email;
+
+  // Se está verificando onboarding, mostra loading
+  if (checkingOnboarding) {
+    return <LoadingScreen />;
+  }
+
+  // Se precisa de onboarding (e não está na rota de onboarding), redireciona
+  if (needsOnboarding && route !== 'onboarding') {
+    window.location.href = '/onboarding';
+    return <LoadingScreen />;
+  }
+
+  // Se está na rota de onboarding
+  if (route === 'onboarding') {
+    return (
+      <OnboardingPage 
+        onComplete={() => {
+          localStorage.setItem('onboarding_complete', 'true');
+          window.location.href = '/';
+        }} 
+      />
+    );
+  }
 
   // Renderiza a página baseado na rota
   const renderPage = () => {
