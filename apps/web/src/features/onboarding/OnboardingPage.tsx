@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useOnboarding } from './useOnboarding';
 import { 
   ProgressBar, 
@@ -22,11 +22,104 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
     addVendedor,
     updateVendedor,
     removeVendedor,
+    setVendedores,
+    goToStep,
   } = useOnboarding();
 
   // ID da operação criada no backend
   const [operationId, setOperationId] = useState<string | null>(null);
   const [isCreatingOperation, setIsCreatingOperation] = useState(false);
+  const [isCheckingOperation, setIsCheckingOperation] = useState(true);
+  // Flag que indica se a operação já existia antes do onboarding
+  const [hasExistingOperation, setHasExistingOperation] = useState(false);
+
+  // Verifica se já existe uma operação cadastrada ao carregar
+  useEffect(() => {
+    async function checkExistingOperation() {
+      try {
+        const operations = await api.getOperations();
+        if (operations.length > 0) {
+          // Já existe operação, usa a primeira e pula para vendedores
+          const existingOp = operations[0];
+          setOperationId(existingOp.id);
+          setOperationName(existingOp.name);
+          setHasExistingOperation(true);
+          
+          // Busca os agents/vendedores existentes
+          const agents = await api.getAgentsByOperation(existingOp.id);
+          
+          // Converte agents para o formato de vendedores do onboarding
+          const existingVendedores = await Promise.all(
+            agents.map(async (agent) => {
+              const channel = agent.channels[0]; // Pega o primeiro canal do agent
+              
+              let vendedorStatus: 'pending' | 'connecting' | 'connected' | 'error' = 'pending';
+              let phone: string | undefined;
+              let qrCode: string | undefined;
+              
+              if (channel) {
+                try {
+                  // Verifica o status real do channel no WAHA
+                  const channelStatus = await api.getChannelStatus(channel.id);
+                  
+                  if (channelStatus.status === 'WORKING') {
+                    vendedorStatus = 'connected';
+                    phone = channelStatus.phoneNumber;
+                  } else if (channelStatus.status === 'FAILED') {
+                    vendedorStatus = 'error';
+                  } else {
+                    // STARTING ou SCAN_QR - tenta buscar o QR
+                    try {
+                      const qrData = await api.getChannelQRCode(channel.id);
+                      if (qrData.qrCode) {
+                        // Tem QR - mostra como pending para exibir o QR
+                        qrCode = qrData.qrCode.startsWith('data:') 
+                          ? qrData.qrCode 
+                          : `data:image/png;base64,${qrData.qrCode}`;
+                        vendedorStatus = 'pending';
+                      } else {
+                        // Não tem QR ainda - mostra como connecting
+                        vendedorStatus = 'connecting';
+                      }
+                    } catch {
+                      // Erro ao buscar QR - mostra como connecting
+                      vendedorStatus = 'connecting';
+                    }
+                  }
+                } catch (error) {
+                  console.error('Erro ao verificar status do channel:', error);
+                  vendedorStatus = 'error';
+                }
+              }
+              
+              return {
+                id: agent.id,
+                name: agent.name,
+                phone,
+                status: vendedorStatus,
+                qrCode,
+                channelId: channel?.id,
+                agentId: agent.id,
+              };
+            })
+          );
+          
+          if (existingVendedores.length > 0) {
+            setVendedores(existingVendedores);
+          }
+          
+          goToStep(2, 'vendedores');
+        }
+      } catch (error) {
+        console.error('Erro ao verificar operações existentes:', error);
+      } finally {
+        setIsCheckingOperation(false);
+      }
+    }
+
+    checkExistingOperation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const connectedVendedores = state.vendedores.filter(v => v.status === 'connected');
 
@@ -54,6 +147,27 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
     onComplete();
   };
 
+  // Handler para voltar do VendedoresStep - não permite voltar se já tinha operação
+  const handleVendedoresBack = () => {
+    // Se a operação já existia antes do onboarding, não permite voltar ao Welcome
+    if (hasExistingOperation) {
+      return;
+    }
+    prevStep();
+  };
+
+  // Loading enquanto verifica se existe operação
+  if (isCheckingOperation) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
   const renderStep = () => {
     switch (currentStepName) {
       case 'welcome':
@@ -80,7 +194,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
             onUpdateVendedor={updateVendedor}
             onRemoveVendedor={removeVendedor}
             onNext={nextStep}
-            onBack={prevStep}
+            onBack={hasExistingOperation ? undefined : handleVendedoresBack}
           />
         );
       

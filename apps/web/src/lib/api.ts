@@ -18,12 +18,17 @@ async function apiRequest<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   
+  const headers: Record<string, string> = {};
+  
+  // Só adiciona Content-Type se tiver body
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
   const response = await fetch(url, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   const data = await response.json();
@@ -66,12 +71,30 @@ interface CreateAgentResponse {
   agent: Agent;
 }
 
+interface GetAgentsResponse {
+  agents: (Agent & {
+    channels: Array<{
+      id: string;
+      name: string;
+      type: string;
+      status: string;
+    }>;
+  })[];
+}
+
+export type AgentWithChannels = GetAgentsResponse['agents'][number];
+
 export async function createAgent(data: {
   name: string;
   operationId: string;
 }): Promise<Agent> {
   const response = await apiRequest<CreateAgentResponse>('POST', '/agents', data);
   return response.agent;
+}
+
+export async function getAgentsByOperation(operationId: string): Promise<AgentWithChannels[]> {
+  const response = await apiRequest<GetAgentsResponse>('GET', `/agents?operationId=${operationId}`);
+  return response.agents;
 }
 
 // ============================================================================

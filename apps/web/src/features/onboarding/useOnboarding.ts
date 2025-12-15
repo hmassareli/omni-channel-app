@@ -69,6 +69,13 @@ export function useOnboarding() {
     }));
   };
 
+  const setVendedores = (vendedores: OnboardingVendedor[]) => {
+    setState(prev => ({
+      ...prev,
+      vendedores,
+    }));
+  };
+
   const canProceed = (): boolean => {
     switch (currentStepName) {
       case 'welcome':
@@ -96,6 +103,7 @@ export function useOnboarding() {
     addVendedor,
     updateVendedor,
     removeVendedor,
+    setVendedores,
     canProceed,
   };
 }

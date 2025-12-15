@@ -10,7 +10,7 @@ interface VendedoresStepProps {
   onUpdateVendedor: (id: string, updates: Partial<OnboardingVendedor>) => void;
   onRemoveVendedor: (id: string) => void;
   onNext: () => void;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export function VendedoresStep({
@@ -152,12 +152,16 @@ export function VendedoresStep({
     }
   };
 
-  // Polling para verificar status dos vendedores com QR gerado
+  // Polling para verificar status dos vendedores aguardando conexão
   const checkStatuses = useCallback(async () => {
     for (const vendedor of vendedores) {
-      if (vendedor.channelId && vendedor.status === 'pending' && vendedor.qrCode) {
+      // Verifica vendedores que estão aguardando conexão (pending com QR ou connecting)
+      const shouldCheck = vendedor.channelId && 
+        ((vendedor.status === 'pending' && vendedor.qrCode) || vendedor.status === 'connecting');
+      
+      if (shouldCheck) {
         try {
-          const status = await api.getChannelStatus(vendedor.channelId);
+          const status = await api.getChannelStatus(vendedor.channelId!);
           
           if (status.status === 'WORKING') {
             onUpdateVendedor(vendedor.id, { 
@@ -175,13 +179,13 @@ export function VendedoresStep({
     }
   }, [vendedores, onUpdateVendedor]);
 
-  // Polling a cada 3 segundos enquanto houver vendedores pendentes com QR
+  // Polling a cada 3 segundos enquanto houver vendedores aguardando conexão
   useEffect(() => {
-    const hasPendingWithQR = vendedores.some(
-      v => v.status === 'pending' && v.qrCode
+    const hasWaitingConnection = vendedores.some(
+      v => (v.status === 'pending' && v.qrCode) || v.status === 'connecting'
     );
     
-    if (!hasPendingWithQR) return;
+    if (!hasWaitingConnection) return;
     
     const interval = setInterval(checkStatuses, 3000);
     return () => clearInterval(interval);
@@ -261,13 +265,15 @@ export function VendedoresStep({
       )}
 
       {/* Navegação */}
-      <div className="flex justify-between">
-        <button
-          onClick={onBack}
-          className="px-6 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-        >
-          Voltar
-        </button>
+      <div className={`flex ${onBack ? 'justify-between' : 'justify-end'}`}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="px-6 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Voltar
+          </button>
+        )}
         <button
           onClick={onNext}
           disabled={!hasConnectedVendedor}
