@@ -2,7 +2,7 @@
   "name": "omni-channel-app",
   "private": true,
   "engines": {
-    "node": "^20.19.0 || >=22.12.0"
+    "node": ">=20.19.0 <21"
   },
   "workspaces": [
     "apps/*"
