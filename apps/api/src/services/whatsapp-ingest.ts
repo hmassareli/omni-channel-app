@@ -35,11 +35,13 @@ const payloadSchema = z
 
 const webhookBodySchema = z
   .object({
+    session: z.string().optional(), // Nome da sessão WAHA
     me: z
       .object({
         id: z.string(),
       })
-      .loose(),
+      .loose()
+      .optional(),
     payload: payloadSchema,
   })
   .loose();
@@ -62,9 +64,9 @@ export async function ingestWhatsappMessage(
   const envelope = webhookBodySchema.parse(
     "body" in parsed ? parsed.body : parsed
   );
-  const { me, payload: messagePayload } = envelope;
+  const { me, payload: messagePayload, session: sessionName } = envelope;
 
-  const channelIdentifier = sanitizeWaId(me.id);
+  const channelIdentifier = sanitizeWaId(me?.id);
   if (!channelIdentifier) {
     return { skipped: true, reason: "missing-channel-identifier" };
   }
@@ -112,6 +114,7 @@ export async function ingestWhatsappMessage(
   const sentAt = resolveTimestamp(messagePayload);
   const messageContent = resolveContent(messagePayload);
 
+  // Tenta encontrar o channel pelo externalIdentifier (número do WhatsApp)
   let channel = await prisma.channel.findFirst({
     where: {
       type: ChannelType.WHATSAPP,
@@ -119,7 +122,29 @@ export async function ingestWhatsappMessage(
     },
   });
 
+  // Se não encontrou, tenta pelo sessionName (nome da sessão WAHA)
+  if (!channel && sessionName) {
+    const whatsappChannel = await prisma.whatsAppChannel.findUnique({
+      where: { sessionName },
+      include: { channel: true },
+    });
+
+    if (whatsappChannel) {
+      channel = whatsappChannel.channel;
+      
+      // Atualiza o externalIdentifier para facilitar buscas futuras
+      await prisma.channel.update({
+        where: { id: channel.id },
+        data: { externalIdentifier: channelIdentifier },
+      });
+      
+      console.log(`[Ingest] Channel ${channel.name} atualizado com externalIdentifier: ${channelIdentifier}`);
+    }
+  }
+
+  // Se ainda não encontrou, cria um novo channel (sem operationId - órfão)
   if (!channel) {
+    console.log(`[Ingest] Criando channel órfão para ${channelIdentifier}`);
     channel = await prisma.channel.create({
       data: {
         name: `WhatsApp ${channelIdentifier}`,
