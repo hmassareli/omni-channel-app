@@ -17,7 +17,9 @@
     "db:migrate": "dotenv -e .env -- prisma migrate dev",
     "db:migrate:test": "dotenv -e .env.test -- prisma migrate deploy",
     "db:studio": "dotenv -e .env -- prisma studio",
-    "db:generate": "dotenv -e .env -- prisma generate"
+    "db:generate": "dotenv -e .env -- prisma generate",
+    "build": "tsc",
+    "start": "node dist/index.js"
   },
   "keywords": [],
   "author": "",
