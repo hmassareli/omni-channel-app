@@ -38,14 +38,12 @@ ENV NODE_ENV=production
 
 # Copiar apenas o necessário do estágio de build
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
-COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/apps/api/dist ./dist
+COPY --from=builder /app/apps/api/prisma ./prisma
+COPY --from=builder /app/apps/api/package.json ./package.json
 
 # Porta padrão da sua API
-EXPOSE 3000
+EXPOSE 3333
 
-# Comando para rodar a aplicação
-WORKDIR /app/apps/api
-CMD ["npm", "run", "start"]
+# Comando para rodar a aplicação diretamente
+CMD ["node", "dist/src/index.js"]

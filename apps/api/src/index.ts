@@ -77,7 +77,7 @@ export async function buildApp() {
 // Só inicia o servidor se executado diretamente (não em testes)
 if (require.main === module) {
   buildApp().then((app) => {
-    app.listen({ port: 3333 }).then(() => {
+    app.listen({ port: 3333, host: "0.0.0.0" }).then(() => {
       console.log("HTTP server running on http://localhost:3333");
     });
   });
