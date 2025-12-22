@@ -3,28 +3,32 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Copiar arquivos de definição de pacotes
+# Argumento de build para a URL da API
+ARG VITE_API_URL
+ARG VITE_REDIRECT_AUTH_URL
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_REDIRECT_AUTH_URL=$VITE_REDIRECT_AUTH_URL
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 COPY package*.json ./
 COPY apps/web/package.json ./apps/web/
 COPY apps/api/package.json ./apps/api/
 
-# Instalar dependências
 RUN npm install
 
-# Copiar código fonte
 COPY apps/web ./apps/web
 COPY apps/api ./apps/api
 
-# Buildar o projeto
 RUN npm run build --workspace=@omni/web
 
 # Estágio 2: Runner (Nginx)
 FROM nginx:stable-alpine AS runner
 
-# Copiar o build do Vite para o diretório do Nginx
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
-# Configuração básica para SPA (redirecionar rotas para index.html)
 RUN echo 'server { \
     listen 80; \
     location / { \
