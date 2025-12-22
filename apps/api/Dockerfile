@@ -46,5 +46,6 @@ COPY --from=builder /app/package.json ./package.json
 # Porta padrão da sua API
 EXPOSE 3000
 
-# Comando para rodar a aplicação usando o workspace
-CMD ["npm", "run", "start", "--workspace=@omni/api"]
+# Comando para rodar a aplicação
+WORKDIR /app/apps/api
+CMD ["npm", "run", "start"]
