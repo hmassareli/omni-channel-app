@@ -1,0 +1,36 @@
+# Dependencies (platform-specific binaries)
+node_modules
+**/node_modules
+
+# Lock files (may contain platform-specific optional deps)
+package-lock.json
+**/package-lock.json
+
+# Build outputs
+dist
+**/dist
+
+# Development files
+.git
+.gitignore
+*.md
+!README.md
+
+# IDE
+.vscode
+.idea
+
+# Environment files (secrets should come via build args or runtime env)
+.env
+.env.*
+!.env.example
+
+# Test files
+**/tests
+**/*.test.ts
+**/vitest.config.ts
+**/test-output.txt
+
+# Logs
+*.log
+npm-debug.log*

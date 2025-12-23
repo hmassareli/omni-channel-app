@@ -16,11 +16,12 @@ ENV VITE_REDIRECT_AUTH_URL=$VITE_REDIRECT_AUTH_URL
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
-COPY package*.json ./
+COPY package.json ./
 COPY apps/web/package.json ./apps/web/
 COPY apps/api/package.json ./apps/api/
 
-# Instalar com optional dependencies para o rolldown
+# Fresh install para garantir binários Linux corretos para rolldown
+# Não usa package-lock.json do Windows para evitar binários incompatíveis
 RUN npm install --include=optional
 
 COPY apps/web ./apps/web
