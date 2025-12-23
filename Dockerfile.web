@@ -28,7 +28,9 @@ COPY apps/api ./apps/api
 # Gerar o Prisma Client para que os tipos estejam disponíveis para o frontend
 RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
 
-RUN npm run build --workspace=@omni/web
+# Build direto na pasta do web
+WORKDIR /app/apps/web
+RUN npm run build
 
 # Estágio 2: Runner (Nginx)
 FROM nginx:stable-alpine AS runner
