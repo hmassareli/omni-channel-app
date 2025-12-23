@@ -1,6 +1,9 @@
 # Estágio 1: Build
 FROM node:20-slim AS builder
 
+# Instalar openssl para o Prisma
+RUN apt-get update -y && apt-get install -y openssl
+
 WORKDIR /app
 
 # Argumento de build para a URL da API
@@ -21,6 +24,9 @@ RUN npm install
 
 COPY apps/web ./apps/web
 COPY apps/api ./apps/api
+
+# Gerar o Prisma Client para que os tipos estejam disponíveis para o frontend
+RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
 
 RUN npm run build --workspace=@omni/web
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, QrCode, RefreshCw, Trash2, User, Loader2 } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, User, Loader2 } from 'lucide-react';
 import type { OnboardingVendedor } from '../types';
 import * as api from '../../../lib/api';
 
