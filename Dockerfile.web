@@ -20,7 +20,8 @@ COPY package*.json ./
 COPY apps/web/package.json ./apps/web/
 COPY apps/api/package.json ./apps/api/
 
-RUN npm install
+# Instalar com optional dependencies para o rolldown
+RUN npm install --include=optional
 
 COPY apps/web ./apps/web
 COPY apps/api ./apps/api
