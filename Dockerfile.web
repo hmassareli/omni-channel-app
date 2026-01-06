@@ -22,7 +22,7 @@ COPY apps/api/package.json ./apps/api/
 
 # Fresh install para garantir binários Linux corretos para rolldown
 # Não usa package-lock.json do Windows para evitar binários incompatíveis
-RUN npm install --include=optional
+RUN npm cache clean --force && npm install --include=optional
 
 COPY apps/web ./apps/web
 COPY apps/api ./apps/api
