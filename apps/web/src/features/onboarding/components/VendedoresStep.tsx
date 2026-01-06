@@ -169,8 +169,27 @@ export function VendedoresStep({
               phone: status.phoneNumber,
               qrCode: undefined,
             });
-          } else if (status.status === 'FAILED') {
+          } else if (status.status === 'STOPPED') {
             onUpdateVendedor(vendedor.id, { status: 'error' });
+          } else if (status.wahaStatus === 'SCAN_QR_CODE') {
+            // QR pode ter expirado, busca novo QR
+            try {
+              const qrData = await api.getChannelQRCode(vendedor.channelId!);
+              if (qrData.qrCode) {
+                const newQrCode = qrData.qrCode.startsWith('data:') 
+                  ? qrData.qrCode 
+                  : `data:image/png;base64,${qrData.qrCode}`;
+                // Só atualiza se for diferente (evita flicker)
+                if (newQrCode !== vendedor.qrCode) {
+                  onUpdateVendedor(vendedor.id, { 
+                    status: 'pending',
+                    qrCode: newQrCode,
+                  });
+                }
+              }
+            } catch (qrError) {
+              console.log('Erro ao atualizar QR:', qrError);
+            }
           }
         } catch (error) {
           console.error('Erro ao verificar status:', error);
