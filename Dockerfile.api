@@ -34,4 +34,5 @@ COPY --from=builder /app/apps/api/package.json ./package.json
 
 EXPOSE 3333
 
-CMD ["node", "dist/src/index.js"]
+# Roda migrations e depois inicia o servidor
+CMD ["sh", "-c", "npx prisma migrate deploy --schema=./prisma/schema.prisma && node dist/src/index.js"]
