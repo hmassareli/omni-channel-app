@@ -20,7 +20,7 @@ async function apiRequest<T>(
   
   const headers: Record<string, string> = {};
   
-  // Só adiciona Content-Type se tiver body
+  // Só adiciona Content-Type se tiver body...
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
