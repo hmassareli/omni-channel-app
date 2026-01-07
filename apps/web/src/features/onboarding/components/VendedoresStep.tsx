@@ -1,7 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, QrCode, RefreshCw, User, Loader2 } from 'lucide-react';
 import type { OnboardingVendedor } from '../types';
 import * as api from '../../../lib/api';
+
+// Intervalo de polling em ms (5 segundos é suficiente para QR codes)
+const POLLING_INTERVAL_MS = 5000;
+// Intervalo para atualizar o QR code (20s - antes de expirar os ~30s)
+const QR_REFRESH_INTERVAL_MS = 30000;
 
 interface VendedoresStepProps {
   operationId: string;
@@ -25,6 +30,11 @@ export function VendedoresStep({
   const [showAddForm, setShowAddForm] = useState(vendedores.length === 0);
   const [newVendedorName, setNewVendedorName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  
+  // Ref para evitar chamadas duplicadas durante polling
+  const isPollingRef = useRef(false);
+  // Ref para armazenar timestamp do último fetch de QR por vendedor
+  const lastQrFetchRef = useRef<Record<string, number>>({});
 
   const hasConnectedVendedor = vendedores.some(v => v.status === 'connected');
 
@@ -154,12 +164,18 @@ export function VendedoresStep({
 
   // Polling para verificar status dos vendedores aguardando conexão
   const checkStatuses = useCallback(async () => {
-    for (const vendedor of vendedores) {
-      // Verifica vendedores que estão aguardando conexão (pending com QR ou connecting)
-      const shouldCheck = vendedor.channelId && 
-        ((vendedor.status === 'pending' && vendedor.qrCode) || vendedor.status === 'connecting');
-      
-      if (shouldCheck) {
+    // Evita chamadas duplicadas se o polling anterior ainda está rodando
+    if (isPollingRef.current) return;
+    isPollingRef.current = true;
+    
+    try {
+      for (const vendedor of vendedores) {
+        // Verifica vendedores que estão aguardando conexão (pending com QR ou connecting)
+        const shouldCheck = vendedor.channelId && 
+          ((vendedor.status === 'pending' && vendedor.qrCode) || vendedor.status === 'connecting');
+        
+        if (!shouldCheck) continue;
+        
         try {
           const status = await api.getChannelStatus(vendedor.channelId!);
           
@@ -169,36 +185,48 @@ export function VendedoresStep({
               phone: status.phoneNumber,
               qrCode: undefined,
             });
+            delete lastQrFetchRef.current[vendedor.id];
           } else if (status.status === 'STOPPED') {
             onUpdateVendedor(vendedor.id, { status: 'error' });
+            delete lastQrFetchRef.current[vendedor.id];
           } else if (status.wahaStatus === 'SCAN_QR_CODE') {
-            // QR pode ter expirado, busca novo QR
-            try {
-              const qrData = await api.getChannelQRCode(vendedor.channelId!);
-              if (qrData.qrCode) {
-                const newQrCode = qrData.qrCode.startsWith('data:') 
-                  ? qrData.qrCode 
-                  : `data:image/png;base64,${qrData.qrCode}`;
-                // Só atualiza se for diferente (evita flicker)
-                if (newQrCode !== vendedor.qrCode) {
-                  onUpdateVendedor(vendedor.id, { 
-                    status: 'pending',
-                    qrCode: newQrCode,
-                  });
+            // Busca novo QR se ainda não temos um, ou se passou tempo suficiente (QR expira ~30s)
+            const lastFetch = lastQrFetchRef.current[vendedor.id] || 0;
+            const now = Date.now();
+            const needsQR = !vendedor.qrCode || (now - lastFetch) >= QR_REFRESH_INTERVAL_MS;
+            
+            if (needsQR) {
+              try {
+                const qrData = await api.getChannelQRCode(vendedor.channelId!);
+                lastQrFetchRef.current[vendedor.id] = now;
+                
+                if (qrData.qrCode) {
+                  const newQrCode = qrData.qrCode.startsWith('data:') 
+                    ? qrData.qrCode 
+                    : `data:image/png;base64,${qrData.qrCode}`;
+                  // Só atualiza se for diferente (evita flicker)
+                  if (newQrCode !== vendedor.qrCode) {
+                    onUpdateVendedor(vendedor.id, { 
+                      status: 'pending',
+                      qrCode: newQrCode,
+                    });
+                  }
                 }
+              } catch (qrError) {
+                console.log('Erro ao atualizar QR:', qrError);
               }
-            } catch (qrError) {
-              console.log('Erro ao atualizar QR:', qrError);
             }
           }
         } catch (error) {
           console.error('Erro ao verificar status:', error);
         }
       }
+    } finally {
+      isPollingRef.current = false;
     }
   }, [vendedores, onUpdateVendedor]);
 
-  // Polling a cada 3 segundos enquanto houver vendedores aguardando conexão
+  // Polling enquanto houver vendedores aguardando conexão
   useEffect(() => {
     const hasWaitingConnection = vendedores.some(
       v => (v.status === 'pending' && v.qrCode) || v.status === 'connecting'
@@ -206,7 +234,7 @@ export function VendedoresStep({
     
     if (!hasWaitingConnection) return;
     
-    const interval = setInterval(checkStatuses, 3000);
+    const interval = setInterval(checkStatuses, POLLING_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [vendedores, checkStatuses]);
 
