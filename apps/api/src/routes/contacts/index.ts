@@ -2,6 +2,7 @@ import { Prisma, TagSource } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
+import { authMiddleware } from "../../middleware/auth";
 
 // ============================================================================
 // Schemas
@@ -44,10 +45,18 @@ export async function contactsRoutes(app: FastifyInstance) {
    * GET /contacts
    * Lista contatos com paginação e filtros
    */
-  app.get("/", async (request, reply) => {
+  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const query = contactQuerySchema.parse(request.query);
 
-    const where: Prisma.ContactWhereInput = {};
+    if (!user.operationId) {
+      return reply.send({ contacts: [], total: 0 });
+    }
+
+    const where: Prisma.ContactWhereInput = {
+      // Filtra por operation via stage
+      stage: { operationId: user.operationId }
+    };
 
     // Filtro por operation (através das conversations -> channel -> operation)
     if (query.operationId) {

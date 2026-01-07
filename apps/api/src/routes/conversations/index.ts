@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
+import { authMiddleware } from "../../middleware/auth";
 
 // ============================================================================
 // Schemas
@@ -38,10 +39,18 @@ export async function conversationsRoutes(app: FastifyInstance) {
    * GET /conversations
    * Lista conversas com filtros e paginação
    */
-  app.get("/", async (request, reply) => {
+  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const query = conversationQuerySchema.parse(request.query);
 
-    const where: Prisma.ConversationWhereInput = {};
+    if (!user.operationId) {
+      return reply.send({ conversations: [], total: 0 });
+    }
+
+    const where: Prisma.ConversationWhereInput = {
+      // Filtra por operation via channel
+      channel: { operationId: user.operationId }
+    };
 
     if (query.channelId) {
       where.channelId = query.channelId;

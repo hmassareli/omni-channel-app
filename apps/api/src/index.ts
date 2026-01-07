@@ -1,4 +1,5 @@
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import dotenv from "dotenv";
 import fastify from "fastify";
 import {
@@ -11,6 +12,7 @@ import { prisma } from "./prisma";
 
 // Routes
 import { agentsRoutes } from "./routes/agents";
+import { authRoutes } from "./routes/auth";
 import { channelsRoutes } from "./routes/channels";
 import { contactsRoutes } from "./routes/contacts";
 import { conversationsRoutes } from "./routes/conversations";
@@ -48,6 +50,16 @@ export async function buildApp() {
     origin: "*", // Em produção, mude para a URL do seu frontend
   });
 
+  // Rate limiting: previne ataques de força bruta
+  await app.register(rateLimit, {
+    max: 100, // 100 requisições
+    timeWindow: "15 minutes", // Por janela de 15 minutos
+    errorResponseBuilder: () => ({
+      error: "Muitas requisições. Tente novamente em alguns minutos.",
+      statusCode: 429,
+    }),
+  });
+
   app.decorate("prisma", prisma);
 
   app.addHook("onClose", async (instance) => {
@@ -60,6 +72,9 @@ export async function buildApp() {
 
   // Rotas de webhook (WAHA, etc)
   await app.register(registerWhatsappWebhookRoutes, { prefix: "/webhooks" });
+
+  // Rotas de autenticação (públicas)
+  await app.register(authRoutes, { prefix: "/auth" });
 
   // Rotas de entidades
   await app.register(operationsRoutes, { prefix: "/operations" });

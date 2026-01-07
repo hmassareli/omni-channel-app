@@ -12,22 +12,39 @@ import { supabase } from "../lib/supabase";
 export function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
-      // O Supabase automaticamente processa o hash fragment com os tokens
+
+      
+      // Aguarda um pouco para o Supabase processar o hash
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Tenta trocar o code por sessão
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
+        window.location.search
+      );
+      
+      if (exchangeError) {
+        console.error('[Callback] Erro ao trocar code:', exchangeError);
+      }
+      
+      // Verifica a sessão
       const { data, error } = await supabase.auth.getSession();
+      
+
 
       if (error) {
-        console.error("Erro no callback de autenticação:", error);
-        window.location.href = "/login?error=auth_callback_failed";
+        console.error("Erro:", error);
+        window.location.href = "/?error=auth_callback_failed";
         return;
       }
 
-      if (data.session) {
-        // Sucesso! Redireciona para a página principal
-        window.location.href = "/";
-      } else {
-        // Sem sessão, volta para o login
-        window.location.href = "/login";
+      if (!data.session) {
+        console.error("Sem sessão!");
+        window.location.href = "/?error=auth_callback_failed";
+        return;
       }
+
+
+      window.location.href = "/";
     };
 
     handleCallback();

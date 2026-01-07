@@ -2,6 +2,7 @@ import { UserRole } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
+import { authMiddleware } from "../../middleware/auth";
 
 // ============================================================================
 // Schemas
@@ -37,14 +38,19 @@ const userQuerySchema = z.object({
 export async function usersRoutes(app: FastifyInstance) {
   /**
    * GET /users
-   * Lista todos os usuários
+   * Lista todos os usuários da mesma operation
    */
-  app.get("/", async (request, reply) => {
+  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const query = userQuerySchema.parse(request.query);
+
+    if (!user.operationId) {
+      return reply.send({ users: [] });
+    }
 
     const users = await prisma.user.findMany({
       where: {
-        operationId: query.operationId,
+        operationId: user.operationId, // Sempre filtra pela operation do usuário
         role: query.role,
       },
       include: {

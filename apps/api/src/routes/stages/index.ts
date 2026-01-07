@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
+import { authMiddleware } from "../../middleware/auth";
 
 // ============================================================================
 // Schemas
@@ -60,14 +61,19 @@ const reorderStagesSchema = z.object({
 export async function stagesRoutes(app: FastifyInstance) {
   /**
    * GET /stages
-   * Lista todos os stages
+   * Lista todos os stages da operation do usuário
    */
-  app.get("/", async (request, reply) => {
+  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const query = stageQuerySchema.parse(request.query);
+
+    if (!user.operationId) {
+      return reply.send({ stages: [] });
+    }
 
     const stages = await prisma.stage.findMany({
       where: {
-        operationId: query.operationId,
+        operationId: user.operationId, // Sempre filtra pela operation do usuário
       },
       include: {
         operation: { select: { id: true, name: true } },

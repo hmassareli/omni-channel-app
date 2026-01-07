@@ -1,5 +1,6 @@
 // Cliente HTTP para a API do backend
 import type { Operation, Agent, Channel, ChannelStatus } from '@omni/api/types';
+import { supabase } from './supabase';
 
 // Re-export types para facilitar uso nos componentes
 export type { Operation, Agent, Channel, ChannelStatus };
@@ -20,7 +21,13 @@ async function apiRequest<T>(
   
   const headers: Record<string, string> = {};
   
-  // Só adiciona Content-Type se tiver body...
+  // Adiciona token de autenticação do Supabase
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+  
+  // Só adiciona Content-Type se tiver body
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
@@ -42,15 +49,52 @@ async function apiRequest<T>(
 }
 
 // ============================================================================
+// Auth
+// ============================================================================
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'MANAGER' | 'AGENT';
+  operationId: string | null;
+}
+
+interface SignupResponse {
+  user: User;
+}
+
+/**
+ * Cria um usuário no banco após signup no Supabase
+ * IMPORTANTE: Chamar logo após o usuário fazer signup
+ */
+export async function signupUser(email: string, name: string): Promise<User> {
+  const response = await apiRequest<SignupResponse>('POST', '/auth/signup', { email, name });
+  return response.user;
+}
+
+interface GetMeResponse {
+  user: User;
+}
+
+/**
+ * Retorna informações do usuário autenticado
+ */
+export async function getCurrentUser(): Promise<User> {
+  const response = await apiRequest<GetMeResponse>('GET', '/auth/me');
+  return response.user;
+}
+
+// ============================================================================
 // Operations
 // ============================================================================
 
-interface CreateOperationResponse {
-  operation: Operation;
+interface GetOperationResponse {
+  operation: Operation | null;
 }
 
-interface GetOperationsResponse {
-  operations: Operation[];
+interface CreateOperationResponse {
+  operation: Operation;
 }
 
 export async function createOperation(name: string): Promise<Operation> {
@@ -58,9 +102,12 @@ export async function createOperation(name: string): Promise<Operation> {
   return response.operation;
 }
 
-export async function getOperations(): Promise<Operation[]> {
-  const response = await apiRequest<GetOperationsResponse>('GET', '/operations');
-  return response.operations;
+/**
+ * Retorna a operation do usuário autenticado
+ */
+export async function getUserOperation(): Promise<Operation | null> {
+  const response = await apiRequest<GetOperationResponse>('GET', '/operations');
+  return response.operation;
 }
 
 // ============================================================================

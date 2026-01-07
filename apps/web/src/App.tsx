@@ -5,6 +5,7 @@ import { LoginPage } from "./components/LoginPage";
 import { AuthCallback } from "./components/AuthCallback";
 import { ContactTimeline } from "./pages/ContactTimeline";
 import { OnboardingPage } from "./features/onboarding";
+import * as api from "./lib/api";
 
 // --- Componentes de Layout ---
 
@@ -109,25 +110,46 @@ function Dashboard() {
   const route = getRoute();
   
   // Estado para controlar se precisa fazer onboarding
-  // TODO: Buscar da API se o usuário já tem operação configurada
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
   useEffect(() => {
-    // Simula verificação se usuário precisa de onboarding
-    // TODO: Substituir por chamada real à API
     const checkOnboarding = async () => {
-      // const hasOperation = await api.getUserOperation();
-      // setNeedsOnboarding(!hasOperation);
-      
-      // Por enquanto, verifica localStorage
-      const onboardingComplete = localStorage.getItem('onboarding_complete');
-      setNeedsOnboarding(!onboardingComplete);
-      setCheckingOnboarding(false);
+      if (!user?.email) {
+        setCheckingOnboarding(false);
+        return;
+      }
+
+      try {
+        // 1. Garante que o usuário existe no banco
+        const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user.email.split('@')[0];
+        
+        await api.signupUser(user.email, userName);
+
+        // 2. Verifica se tem operation
+        const operation = await api.getUserOperation();
+        setNeedsOnboarding(!operation);
+      } catch (error) {
+        console.error('[Dashboard] Erro ao verificar onboarding:', error);
+        // Se for erro de "já cadastrado", ignora
+        if (error instanceof Error && error.message.includes('já cadastrado')) {
+          try {
+            const operation = await api.getUserOperation();
+            setNeedsOnboarding(!operation);
+          } catch (opError) {
+            console.error('[Dashboard] Erro ao buscar operation:', opError);
+            setNeedsOnboarding(true);
+          }
+        } else {
+          setNeedsOnboarding(true);
+        }
+      } finally {
+        setCheckingOnboarding(false);
+      }
     };
     
     checkOnboarding();
-  }, []);
+  }, [user]);
 
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name;
   const userEmail = user?.email;
@@ -148,7 +170,7 @@ function Dashboard() {
     return (
       <OnboardingPage 
         onComplete={() => {
-          localStorage.setItem('onboarding_complete', 'true');
+          setNeedsOnboarding(false);
           window.location.href = '/';
         }} 
       />

@@ -37,16 +37,17 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   useEffect(() => {
     async function checkExistingOperation() {
       try {
-        const operations = await api.getOperations();
-        if (operations.length > 0) {
-          // Já existe operação, usa a primeira e pula para vendedores
-          const existingOp = operations[0];
-          setOperationId(existingOp.id);
-          setOperationName(existingOp.name);
+        // Busca a operation do usuário autenticado
+        const operation = await api.getUserOperation();
+        
+        if (operation) {
+          // Já existe operação, usa ela e pula para vendedores
+          setOperationId(operation.id);
+          setOperationName(operation.name);
           setHasExistingOperation(true);
           
           // Busca os agents/vendedores existentes
-          const agents = await api.getAgentsByOperation(existingOp.id);
+          const agents = await api.getAgentsByOperation(operation.id);
           
           // Converte agents para o formato de vendedores do onboarding
           const existingVendedores = await Promise.all(
@@ -111,7 +112,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
           goToStep(2, 'vendedores');
         }
       } catch (error) {
-        console.error('Erro ao verificar operações existentes:', error);
+        console.error('Erro ao verificar operation do usuário:', error);
       } finally {
         setIsCheckingOperation(false);
       }

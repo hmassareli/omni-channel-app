@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
+import { authMiddleware } from "../../middleware/auth";
 
 // ============================================================================
 // Schemas
@@ -34,14 +35,19 @@ const agentQuerySchema = z.object({
 export async function agentsRoutes(app: FastifyInstance) {
   /**
    * GET /agents
-   * Lista todos os agentes
+   * Lista todos os agentes da operation do usuário
    */
-  app.get("/", async (request, reply) => {
+  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const query = agentQuerySchema.parse(request.query);
+
+    if (!user.operationId) {
+      return reply.send({ agents: [] });
+    }
 
     const agents = await prisma.agent.findMany({
       where: {
-        operationId: query.operationId,
+        operationId: user.operationId, // Sempre filtra pela operation do usuário
       },
       include: {
         operation: { select: { id: true, name: true } },

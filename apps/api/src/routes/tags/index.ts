@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
+import { authMiddleware } from "../../middleware/auth";
 
 // ============================================================================
 // Schemas
@@ -54,14 +55,19 @@ const tagQuerySchema = z.object({
 export async function tagsRoutes(app: FastifyInstance) {
   /**
    * GET /tags
-   * Lista todas as tags
+   * Lista todas as tags da operation do usuário
    */
-  app.get("/", async (request, reply) => {
+  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const query = tagQuerySchema.parse(request.query);
+
+    if (!user.operationId) {
+      return reply.send({ tags: [] });
+    }
 
     const tags = await prisma.tag.findMany({
       where: {
-        operationId: query.operationId,
+        operationId: user.operationId, // Sempre filtra pela operation do usuário
         isActive: query.isActive,
       },
       include: {

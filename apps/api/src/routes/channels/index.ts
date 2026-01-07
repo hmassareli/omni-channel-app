@@ -2,6 +2,7 @@ import { ChannelStatus, ChannelType } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
+import { authMiddleware } from "../../middleware/auth";
 import * as waha from "../../services/waha";
 
 // ============================================================================
@@ -28,8 +29,18 @@ export async function channelsRoutes(app: FastifyInstance) {
    * POST /channels/whatsapp
    * Cria um novo canal WhatsApp e inicia sessão no WAHA
    */
-  app.post("/whatsapp", async (request, reply) => {
+  app.post("/whatsapp", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = createChannelSchema.parse(request.body);
+
+    // Valida que está criando na sua própria operation
+    if (!user.operationId) {
+      return reply.status(403).send({ error: "Usuário sem operation vinculada" });
+    }
+
+    if (body.operationId !== user.operationId) {
+      return reply.status(403).send({ error: "Acesso negado" });
+    }
 
     // Verifica se a operation existe
     const operation = await prisma.operation.findUnique({
@@ -115,12 +126,10 @@ export async function channelsRoutes(app: FastifyInstance) {
         data: { status: ChannelStatus.FAILED },
       });
 
-      const errorMessage =
-        error instanceof Error ? error.message : "Erro desconhecido";
+      console.error("[Channels] Erro ao criar sessão WAHA:", error);
 
       return reply.status(500).send({
         error: "Falha ao criar sessão no WAHA",
-        details: errorMessage,
         channel: {
           ...channel,
           status: ChannelStatus.FAILED,
@@ -133,7 +142,8 @@ export async function channelsRoutes(app: FastifyInstance) {
    * GET /channels/:id/qr
    * Obtém o QR code para autenticação do WhatsApp
    */
-  app.get("/:id/qr", async (request, reply) => {
+  app.get("/:id/qr", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = channelParamsSchema.parse(request.params);
 
     const channel = await prisma.channel.findUnique({
@@ -143,6 +153,11 @@ export async function channelsRoutes(app: FastifyInstance) {
 
     if (!channel) {
       return reply.status(404).send({ error: "Canal não encontrado" });
+    }
+
+    // Valida que o canal pertence à operation do usuário
+    if (channel.operationId !== user.operationId) {
+      return reply.status(403).send({ error: "Acesso negado" });
     }
 
     if (channel.type !== ChannelType.WHATSAPP) {
@@ -170,6 +185,8 @@ export async function channelsRoutes(app: FastifyInstance) {
       const errorMessage =
         error instanceof Error ? error.message : "Erro desconhecido";
 
+      console.error("[Channels] Erro ao obter QR:", error);
+
       // Pode ser que a sessão já esteja autenticada
       if (
         errorMessage.includes("authenticated") ||
@@ -183,7 +200,6 @@ export async function channelsRoutes(app: FastifyInstance) {
 
       return reply.status(500).send({
         error: "Falha ao obter QR code",
-        details: errorMessage,
       });
     }
   });
@@ -192,7 +208,8 @@ export async function channelsRoutes(app: FastifyInstance) {
    * GET /channels/:id/status
    * Verifica o status atual do canal/sessão
    */
-  app.get("/:id/status", async (request, reply) => {
+  app.get("/:id/status", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = channelParamsSchema.parse(request.params);
 
     const channel = await prisma.channel.findUnique({
@@ -202,6 +219,11 @@ export async function channelsRoutes(app: FastifyInstance) {
 
     if (!channel) {
       return reply.status(404).send({ error: "Canal não encontrado" });
+    }
+
+    // Valida que o canal pertence à operation do usuário
+    if (channel.operationId !== user.operationId) {
+      return reply.status(403).send({ error: "Acesso negado" });
     }
 
     if (channel.type !== ChannelType.WHATSAPP || !channel.whatsappDetails) {
@@ -256,7 +278,8 @@ export async function channelsRoutes(app: FastifyInstance) {
    * POST /channels/:id/reconnect
    * Tenta reconectar uma sessão que falhou
    */
-  app.post("/:id/reconnect", async (request, reply) => {
+  app.post("/:id/reconnect", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = channelParamsSchema.parse(request.params);
 
     const channel = await prisma.channel.findUnique({
@@ -266,6 +289,11 @@ export async function channelsRoutes(app: FastifyInstance) {
 
     if (!channel) {
       return reply.status(404).send({ error: "Canal não encontrado" });
+    }
+
+    // Valida que o canal pertence à operation do usuário
+    if (channel.operationId !== user.operationId) {
+      return reply.status(403).send({ error: "Acesso negado" });
     }
 
     if (channel.type !== ChannelType.WHATSAPP || !channel.whatsappDetails) {
@@ -296,8 +324,7 @@ export async function channelsRoutes(app: FastifyInstance) {
         wahaStatus: wahaSession.status,
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Erro desconhecido";
+      console.error("[Channels] Erro ao reconectar:", error);
 
       await prisma.channel.update({
         where: { id: channel.id },
@@ -306,7 +333,6 @@ export async function channelsRoutes(app: FastifyInstance) {
 
       return reply.status(500).send({
         error: "Falha ao reconectar",
-        details: errorMessage,
       });
     }
   });
@@ -315,7 +341,8 @@ export async function channelsRoutes(app: FastifyInstance) {
    * DELETE /channels/:id
    * Remove um canal e sua sessão WAHA
    */
-  app.delete("/:id", async (request, reply) => {
+  app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = channelParamsSchema.parse(request.params);
 
     const channel = await prisma.channel.findUnique({
@@ -325,6 +352,11 @@ export async function channelsRoutes(app: FastifyInstance) {
 
     if (!channel) {
       return reply.status(404).send({ error: "Canal não encontrado" });
+    }
+
+    // Valida que o canal pertence à operation do usuário
+    if (channel.operationId !== user.operationId) {
+      return reply.status(403).send({ error: "Acesso negado" });
     }
 
     // Se for WhatsApp, remove a sessão do WAHA primeiro
@@ -346,11 +378,11 @@ export async function channelsRoutes(app: FastifyInstance) {
 
   /**
    * GET /channels
-   * Lista todos os canais (com filtros opcionais)
+   * Lista todos os canais da operation do usuário (com filtros opcionais)
    */
-  app.get("/", async (request, reply) => {
+  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const querySchema = z.object({
-      operationId: z.uuid().optional(),
       agentId: z.uuid().optional(),
       type: z.enum(ChannelType).optional(),
       status: z.enum(ChannelStatus).optional(),
@@ -358,9 +390,13 @@ export async function channelsRoutes(app: FastifyInstance) {
 
     const query = querySchema.parse(request.query);
 
+    if (!user.operationId) {
+      return reply.send({ channels: [] });
+    }
+
     const channels = await prisma.channel.findMany({
       where: {
-        operationId: query.operationId,
+        operationId: user.operationId, // Sempre filtra pela operation do usuário
         agentId: query.agentId,
         type: query.type,
         status: query.status,

@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
+import { authMiddleware } from "../../middleware/auth";
 
 // ============================================================================
 // Schemas
@@ -25,10 +26,18 @@ const operationParamsSchema = z.object({
 export async function operationsRoutes(app: FastifyInstance) {
   /**
    * GET /operations
-   * Lista todas as operations
+   * Retorna a operation do usuário autenticado
    */
-  app.get("/", async (_request, reply) => {
-    const operations = await prisma.operation.findMany({
+  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
+
+    // Se usuário não tem operation, retorna vazio
+    if (!user.operationId) {
+      return reply.send({ operation: null });
+    }
+
+    const operation = await prisma.operation.findUnique({
+      where: { id: user.operationId },
       include: {
         _count: {
           select: {
@@ -40,18 +49,23 @@ export async function operationsRoutes(app: FastifyInstance) {
           },
         },
       },
-      orderBy: { createdAt: "desc" },
     });
 
-    return reply.send({ operations });
+    return reply.send({ operation });
   });
 
   /**
    * GET /operations/:id
-   * Busca uma operation por ID
+   * Busca uma operation por ID (apenas se pertence ao usuário)
    */
-  app.get("/:id", async (request, reply) => {
+  app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = operationParamsSchema.parse(request.params);
+
+    // Verifica se o usuário tem permissão para acessar esta operation
+    if (user.operationId !== id) {
+      return reply.status(403).send({ error: "Acesso negado" });
+    }
 
     const operation = await prisma.operation.findUnique({
       where: { id },
@@ -78,13 +92,32 @@ export async function operationsRoutes(app: FastifyInstance) {
 
   /**
    * POST /operations
-   * Cria uma nova operation
+   * Cria uma nova operation e vincula ao usuário autenticado
    */
-  app.post("/", async (request, reply) => {
+  app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = createOperationSchema.parse(request.body);
 
-    const operation = await prisma.operation.create({
-      data: { name: body.name },
+    // Verifica se o usuário já tem uma operation
+    if (user.operationId) {
+      return reply.status(400).send({
+        error: "Usuário já possui uma operation vinculada",
+      });
+    }
+
+    // Cria a operation e vincula ao usuário em uma transaction
+    const operation = await prisma.$transaction(async (tx) => {
+      const newOperation = await tx.operation.create({
+        data: { name: body.name },
+      });
+
+      // Vincula o usuário à operation
+      await tx.user.update({
+        where: { id: user.id },
+        data: { operationId: newOperation.id },
+      });
+
+      return newOperation;
     });
 
     return reply.status(201).send({ operation });
@@ -92,11 +125,17 @@ export async function operationsRoutes(app: FastifyInstance) {
 
   /**
    * PUT /operations/:id
-   * Atualiza uma operation
+   * Atualiza uma operation (apenas se pertence ao usuário)
    */
-  app.put("/:id", async (request, reply) => {
+  app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = operationParamsSchema.parse(request.params);
     const body = updateOperationSchema.parse(request.body);
+
+    // Verifica se o usuário tem permissão
+    if (user.operationId !== id) {
+      return reply.status(403).send({ error: "Acesso negado" });
+    }
 
     const existing = await prisma.operation.findUnique({ where: { id } });
     if (!existing) {
@@ -113,10 +152,23 @@ export async function operationsRoutes(app: FastifyInstance) {
 
   /**
    * DELETE /operations/:id
-   * Remove uma operation
+   * Remove uma operation (apenas se pertence ao usuário e role=ADMIN)
    */
-  app.delete("/:id", async (request, reply) => {
+  app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = operationParamsSchema.parse(request.params);
+
+    // Verifica permissão
+    if (user.operationId !== id) {
+      return reply.status(403).send({ error: "Acesso negado" });
+    }
+
+    // Apenas ADMIN pode deletar operations
+    if (user.role !== "ADMIN") {
+      return reply.status(403).send({
+        error: "Apenas administradores podem deletar operations",
+      });
+    }
 
     const existing = await prisma.operation.findUnique({ where: { id } });
     if (!existing) {
