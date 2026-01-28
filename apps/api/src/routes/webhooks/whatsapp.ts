@@ -5,6 +5,7 @@ import { prisma } from "../../prisma";
 import {
   ingestWhatsappMessage,
   whatsappWebhookSchema,
+  type IngestResult,
 } from "../../services/whatsapp-ingest";
 
 const webhookResponseSchema = z.object({
@@ -76,16 +77,17 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
 
     const result = await ingestWhatsappMessage(parseResult.data);
 
-    if (result.skipped) {
+    if ("skipped" in result && result.skipped) {
       return reply.status(202).send({
         skipped: true,
         reason: result.reason,
       });
     }
 
+    const successResult = result as Exclude<IngestResult, { skipped: true }>;
     return reply.status(202).send({
-      conversationId: result.conversationId,
-      messageId: result.messageId,
+      conversationId: successResult.conversationId,
+      messageId: successResult.messageId,
     });
   });
 }

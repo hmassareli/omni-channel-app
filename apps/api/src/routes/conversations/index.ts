@@ -113,7 +113,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
         contact: {
           include: {
             identities: true,
-            stage: { select: { id: true, name: true, color: true } },
+            company: { select: { id: true, name: true, alias: true } },
             tags: {
               include: {
                 tag: { select: { id: true, name: true, color: true } },

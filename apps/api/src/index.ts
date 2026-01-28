@@ -14,9 +14,11 @@ import { prisma } from "./prisma";
 import { agentsRoutes } from "./routes/agents";
 import { authRoutes } from "./routes/auth";
 import { channelsRoutes } from "./routes/channels";
+import { companiesRoutes } from "./routes/companies";
 import { contactsRoutes } from "./routes/contacts";
 import { conversationsRoutes } from "./routes/conversations";
 import { operationsRoutes } from "./routes/operations";
+import { opportunitiesRoutes } from "./routes/opportunities";
 import { stagesRoutes } from "./routes/stages";
 import { tagsRoutes } from "./routes/tags";
 import { usersRoutes } from "./routes/users";
@@ -85,6 +87,8 @@ export async function buildApp() {
   await app.register(stagesRoutes, { prefix: "/stages" });
   await app.register(contactsRoutes, { prefix: "/contacts" });
   await app.register(conversationsRoutes, { prefix: "/conversations" });
+  await app.register(companiesRoutes, { prefix: "/companies" });
+  await app.register(opportunitiesRoutes, { prefix: "/opportunities" });
 
   return app;
 }

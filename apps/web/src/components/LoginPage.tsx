@@ -24,10 +24,14 @@ export function LoginPage() {
     
     if (errorParam) {
       const errorMessage = URL_ERROR_MESSAGES[errorParam] || "Ocorreu um erro. Tente novamente.";
-      setLocalError(errorMessage);
       
       // Limpa o parâmetro da URL sem recarregar a página
       window.history.replaceState({}, "", window.location.pathname);
+      
+      // Define o erro após limpar a URL (assíncrono para evitar warning)
+      setTimeout(() => {
+        setLocalError(errorMessage);
+      }, 0);
     }
   }, []);
 

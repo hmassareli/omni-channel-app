@@ -1,33 +1,18 @@
 // Cliente HTTP para a API do backend
-import type { Operation, Agent, Channel, ChannelStatus } from '@omni/api/types';
 import { supabase } from './supabase';
-
-// Re-export types para facilitar uso nos componentes
-export type { Operation, Agent, Channel, ChannelStatus };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333';
 
-interface ApiError {
-  error: string;
-  details?: unknown;
-}
-
-async function apiRequest<T>(
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
-  path: string,
-  body?: unknown
-): Promise<T> {
+async function apiRequest(method, path, body?) {
   const url = `${API_BASE_URL}${path}`;
   
-  const headers: Record<string, string> = {};
+  const headers = {};
   
-  // Adiciona token de autenticação do Supabase
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) {
     headers['Authorization'] = `Bearer ${session.access_token}`;
   }
   
-  // Só adiciona Content-Type se tiver body
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
@@ -41,47 +26,23 @@ async function apiRequest<T>(
   const data = await response.json();
 
   if (!response.ok) {
-    const error = data as ApiError;
-    throw new Error(error.error || 'Erro na requisição');
+    throw new Error(data.error || 'Erro na requisição');
   }
 
-  return data as T;
+  return data;
 }
 
 // ============================================================================
 // Auth
 // ============================================================================
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'ADMIN' | 'MANAGER' | 'AGENT';
-  operationId: string | null;
-}
-
-interface SignupResponse {
-  user: User;
-}
-
-/**
- * Cria um usuário no banco após signup no Supabase
- * IMPORTANTE: Chamar logo após o usuário fazer signup
- */
-export async function signupUser(email: string, name: string): Promise<User> {
-  const response = await apiRequest<SignupResponse>('POST', '/auth/signup', { email, name });
+export async function signupUser(email, name) {
+  const response = await apiRequest('POST', '/auth/signup', { email, name });
   return response.user;
 }
 
-interface GetMeResponse {
-  user: User;
-}
-
-/**
- * Retorna informações do usuário autenticado
- */
-export async function getCurrentUser(): Promise<User> {
-  const response = await apiRequest<GetMeResponse>('GET', '/auth/me');
+export async function getCurrentUser() {
+  const response = await apiRequest('GET', '/auth/me');
   return response.user;
 }
 
@@ -89,24 +50,13 @@ export async function getCurrentUser(): Promise<User> {
 // Operations
 // ============================================================================
 
-interface GetOperationResponse {
-  operation: Operation | null;
-}
-
-interface CreateOperationResponse {
-  operation: Operation;
-}
-
-export async function createOperation(name: string): Promise<Operation> {
-  const response = await apiRequest<CreateOperationResponse>('POST', '/operations', { name });
+export async function createOperation(name) {
+  const response = await apiRequest('POST', '/operations', { name });
   return response.operation;
 }
 
-/**
- * Retorna a operation do usuário autenticado
- */
-export async function getUserOperation(): Promise<Operation | null> {
-  const response = await apiRequest<GetOperationResponse>('GET', '/operations');
+export async function getUserOperation() {
+  const response = await apiRequest('GET', '/operations');
   return response.operation;
 }
 
@@ -114,33 +64,13 @@ export async function getUserOperation(): Promise<Operation | null> {
 // Agents
 // ============================================================================
 
-interface CreateAgentResponse {
-  agent: Agent;
-}
-
-interface GetAgentsResponse {
-  agents: (Agent & {
-    channels: Array<{
-      id: string;
-      name: string;
-      type: string;
-      status: string;
-    }>;
-  })[];
-}
-
-export type AgentWithChannels = GetAgentsResponse['agents'][number];
-
-export async function createAgent(data: {
-  name: string;
-  operationId: string;
-}): Promise<Agent> {
-  const response = await apiRequest<CreateAgentResponse>('POST', '/agents', data);
+export async function createAgent(data) {
+  const response = await apiRequest('POST', '/agents', data);
   return response.agent;
 }
 
-export async function getAgentsByOperation(operationId: string): Promise<AgentWithChannels[]> {
-  const response = await apiRequest<GetAgentsResponse>('GET', `/agents?operationId=${operationId}`);
+export async function getAgentsByOperation(operationId) {
+  const response = await apiRequest('GET', `/agents?operationId=${operationId}`);
   return response.agents;
 }
 
@@ -148,58 +78,98 @@ export async function getAgentsByOperation(operationId: string): Promise<AgentWi
 // Channels (WhatsApp)
 // ============================================================================
 
-// Tipo extendido com detalhes do WhatsApp (não vem do Prisma direto)
-export interface ChannelWithDetails extends Channel {
-  whatsappDetails?: {
-    sessionName: string;
-  };
+export async function createWhatsAppChannel(data) {
+  return apiRequest('POST', '/channels/whatsapp', data);
 }
 
-export interface CreateWhatsAppChannelResponse {
-  channel: ChannelWithDetails;
-  wahaSession?: {
-    name: string;
-    status: string;
-  };
+export async function getChannelQRCode(channelId) {
+  return apiRequest('GET', `/channels/${channelId}/qr`);
 }
 
-export async function createWhatsAppChannel(data: {
-  name: string;
-  operationId: string;
-  agentId?: string;
-  webhookUrl?: string;
-}): Promise<CreateWhatsAppChannelResponse> {
-  return apiRequest<CreateWhatsAppChannelResponse>('POST', '/channels/whatsapp', data);
+export async function getChannelStatus(channelId) {
+  return apiRequest('GET', `/channels/${channelId}/status`);
 }
 
-export interface QRCodeResponse {
-  channelId: string;
-  qrCode?: string; // Base64 da imagem
-  qrValue?: string;
+export async function reconnectChannel(channelId) {
+  await apiRequest('POST', `/channels/${channelId}/reconnect`);
 }
 
-export async function getChannelQRCode(channelId: string): Promise<QRCodeResponse> {
-  return apiRequest<QRCodeResponse>('GET', `/channels/${channelId}/qr`);
+export async function deleteChannel(channelId) {
+  await apiRequest('DELETE', `/channels/${channelId}`);
 }
 
-export interface ChannelStatusResponse {
-  channelId: string;
-  type: string;
-  status: ChannelStatus;
-  wahaStatus?: string;
-  phoneNumber?: string;
-  pushName?: string;
-  error?: string;
+// ============================================================================
+// Companies
+// ============================================================================
+
+export async function getCompanies(params?) {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+  
+  return apiRequest('GET', `/companies?${searchParams}`);
 }
 
-export async function getChannelStatus(channelId: string): Promise<ChannelStatusResponse> {
-  return apiRequest<ChannelStatusResponse>('GET', `/channels/${channelId}/status`);
+export async function createCompany(data) {
+  return apiRequest('POST', '/companies', data);
 }
 
-export async function reconnectChannel(channelId: string): Promise<void> {
-  await apiRequest<void>('POST', `/channels/${channelId}/reconnect`);
+export async function getCompany(id) {
+  return apiRequest('GET', `/companies/${id}`);
 }
 
-export async function deleteChannel(channelId: string): Promise<void> {
-  await apiRequest<void>('DELETE', `/channels/${channelId}`);
+export async function updateCompany(id, data) {
+  return apiRequest('PUT', `/companies/${id}`, data);
+}
+
+export async function getCompanyTimeline(companyId, params?) {
+  const searchParams = new URLSearchParams();
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+  
+  return apiRequest('GET', `/companies/${companyId}/timeline?${searchParams}`);
+}
+
+// ============================================================================
+// Opportunities
+// ============================================================================
+
+export async function getOpportunities(params?) {
+  const searchParams = new URLSearchParams();
+  if (params?.stageId) searchParams.set('stageId', params.stageId);
+  if (params?.agentId) searchParams.set('agentId', params.agentId);
+  if (params?.companyId) searchParams.set('companyId', params.companyId);
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+  
+  return apiRequest('GET', `/opportunities?${searchParams}`);
+}
+
+export async function getOpportunitiesKanban() {
+  return apiRequest('GET', '/opportunities/kanban');
+}
+
+export async function createOpportunity(data) {
+  return apiRequest('POST', '/opportunities', data);
+}
+
+export async function updateOpportunity(id, data) {
+  return apiRequest('PUT', `/opportunities/${id}`, data);
+}
+
+export async function moveOpportunity(id, stageId) {
+  return apiRequest('PUT', `/opportunities/${id}/move`, { stageId });
+}
+
+export async function deleteOpportunity(id) {
+  await apiRequest('DELETE', `/opportunities/${id}`);
+}
+
+// ============================================================================
+// Stages
+// ============================================================================
+
+export async function getStages() {
+  return apiRequest('GET', '/stages');
 }

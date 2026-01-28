@@ -14,7 +14,6 @@ const contactParamsSchema = z.object({
 
 const contactQuerySchema = z.object({
   operationId: z.string().optional(),
-  stageId: z.uuid().optional(),
   search: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -22,7 +21,8 @@ const contactQuerySchema = z.object({
 
 const updateContactSchema = z.object({
   name: z.string().min(1).optional(),
-  stageId: z.uuid().nullable().optional(),
+  role: z.string().optional(),
+  relevance: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -41,10 +41,6 @@ const removeTagSchema = z.object({
 // ============================================================================
 
 export async function contactsRoutes(app: FastifyInstance) {
-  /**
-   * GET /contacts
-   * Lista contatos com paginação e filtros
-   */
   app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
     const user = request.user!;
     const query = contactQuerySchema.parse(request.query);
@@ -53,12 +49,8 @@ export async function contactsRoutes(app: FastifyInstance) {
       return reply.send({ contacts: [], total: 0 });
     }
 
-    const where: Prisma.ContactWhereInput = {
-      // Filtra por operation via stage
-      stage: { operationId: user.operationId }
-    };
+    const where: Prisma.ContactWhereInput = {};
 
-    // Filtro por operation (através das conversations -> channel -> operation)
     if (query.operationId) {
       where.conversations = {
         some: {
@@ -67,10 +59,6 @@ export async function contactsRoutes(app: FastifyInstance) {
           },
         },
       };
-    }
-
-    if (query.stageId) {
-      where.stageId = query.stageId;
     }
 
     if (query.search) {
@@ -85,10 +73,10 @@ export async function contactsRoutes(app: FastifyInstance) {
         where,
         include: {
           identities: { select: { id: true, type: true, value: true } },
-          stage: { select: { id: true, name: true, color: true } },
           tags: {
             include: { tag: { select: { id: true, name: true, color: true } } },
           },
+          company: { select: { id: true, name: true, alias: true, taxId: true } },
           _count: { select: { conversations: true, messages: true } },
         },
         orderBy: { updatedAt: "desc" },
@@ -109,10 +97,6 @@ export async function contactsRoutes(app: FastifyInstance) {
     });
   });
 
-  /**
-   * GET /contacts/:id
-   * Busca um contato por ID com detalhes completos
-   */
   app.get("/:id", async (request, reply) => {
     const { id } = contactParamsSchema.parse(request.params);
 
@@ -120,10 +104,10 @@ export async function contactsRoutes(app: FastifyInstance) {
       where: { id },
       include: {
         identities: true,
-        stage: true,
         tags: {
           include: { tag: true },
         },
+        company: true,
         insights: {
           include: { definition: true },
           orderBy: { generatedAt: "desc" },
@@ -145,10 +129,6 @@ export async function contactsRoutes(app: FastifyInstance) {
     return reply.send({ contact });
   });
 
-  /**
-   * PUT /contacts/:id
-   * Atualiza um contato
-   */
   app.put("/:id", async (request, reply) => {
     const { id } = contactParamsSchema.parse(request.params);
     const body = updateContactSchema.parse(request.body);
@@ -158,31 +138,14 @@ export async function contactsRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Contato não encontrado" });
     }
 
-    // Verifica se stage existe (se fornecido)
-    if (body.stageId) {
-      const stage = await prisma.stage.findUnique({
-        where: { id: body.stageId },
-      });
-      if (!stage) {
-        return reply.status(404).send({ error: "Stage não encontrado" });
-      }
-    }
-
     const contact = await prisma.contact.update({
       where: { id },
       data: body,
-      include: {
-        stage: { select: { id: true, name: true, color: true } },
-      },
     });
 
     return reply.send({ contact });
   });
 
-  /**
-   * POST /contacts/:id/tags
-   * Adiciona uma tag ao contato
-   */
   app.post("/:id/tags", async (request, reply) => {
     const { id } = contactParamsSchema.parse(request.params);
     const body = addTagSchema.parse(request.body);
@@ -197,7 +160,6 @@ export async function contactsRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Tag não encontrada" });
     }
 
-    // Verifica se já tem a tag
     const existing = await prisma.contactTag.findUnique({
       where: { contactId_tagId: { contactId: id, tagId: body.tagId } },
     });
@@ -217,10 +179,6 @@ export async function contactsRoutes(app: FastifyInstance) {
     return reply.status(201).send({ success: true });
   });
 
-  /**
-   * DELETE /contacts/:id/tags
-   * Remove uma tag do contato
-   */
   app.delete("/:id/tags", async (request, reply) => {
     const { id } = contactParamsSchema.parse(request.params);
     const body = removeTagSchema.parse(request.body);
@@ -239,10 +197,6 @@ export async function contactsRoutes(app: FastifyInstance) {
     return reply.status(204).send();
   });
 
-  /**
-   * GET /contacts/:id/timeline
-   * Retorna a timeline de eventos do contato
-   */
   app.get("/:id/timeline", async (request, reply) => {
     const { id } = contactParamsSchema.parse(request.params);
 

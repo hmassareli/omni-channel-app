@@ -4,6 +4,9 @@ import { useAuth } from "./hooks/useAuth";
 import { LoginPage } from "./components/LoginPage";
 import { AuthCallback } from "./components/AuthCallback";
 import { ContactTimeline } from "./pages/ContactTimeline";
+import { CompaniesPage } from "./pages/CompaniesPage";
+import { CompanyTimeline } from "./pages/CompanyTimeline";
+import { OpportunitiesPage } from "./pages/OpportunitiesPage";
 import { OnboardingPage } from "./features/onboarding";
 import * as api from "./lib/api";
 
@@ -90,7 +93,7 @@ const LoadingScreen = () => (
 );
 
 // --- Roteamento Simples ---
-function getRoute(): "callback" | "contact" | "onboarding" | "home" {
+function getRoute(): "callback" | "contact" | "companies" | "company" | "opportunities" | "onboarding" | "home" {
   const path = window.location.pathname;
   if (path.startsWith("/auth/callback")) {
     return "callback";
@@ -100,6 +103,15 @@ function getRoute(): "callback" | "contact" | "onboarding" | "home" {
   }
   if (path.startsWith("/contact")) {
     return "contact";
+  }
+  if (path.startsWith("/companies/")) {
+    return "company";
+  }
+  if (path.startsWith("/companies")) {
+    return "companies";
+  }
+  if (path.startsWith("/opportunities")) {
+    return "opportunities";
   }
   return "home";
 }
@@ -182,6 +194,12 @@ function Dashboard() {
     switch (route) {
       case "contact":
         return <ContactTimeline userName={userName} />;
+      case "companies":
+        return <CompaniesPage />;
+      case "company":
+        return <CompanyTimeline />;
+      case "opportunities":
+        return <OpportunitiesPage />;
       default:
         // Home: Lista de contatos (placeholder por enquanto)
         return (
