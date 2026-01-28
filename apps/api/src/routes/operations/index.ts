@@ -13,6 +13,7 @@ const createOperationSchema = z.object({
 
 const updateOperationSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório").optional(),
+  onboardingCompleted: z.boolean().optional(),
 });
 
 const operationParamsSchema = z.object({

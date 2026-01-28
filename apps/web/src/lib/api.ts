@@ -1,22 +1,55 @@
 // Cliente HTTP para a API do backend
-import { supabase } from './supabase';
+import type {
+  Agent,
+  Channel,
+  ChannelStatus,
+  Company,
+  Operation,
+  Opportunity,
+  Stage,
+} from "@omni/api/types";
+import { supabase } from "./supabase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333';
+// Re-export types para facilitar uso nos componentes
+export type {
+  Agent,
+  Channel,
+  ChannelStatus,
+  Company,
+  Operation,
+  Opportunity,
+  Stage,
+};
 
-async function apiRequest(method, path, body?) {
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3333";
+
+interface ApiError {
+  error: string;
+  details?: unknown;
+}
+
+async function apiRequest<T>(
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
-  
-  const headers = {};
-  
-  const { data: { session } } = await supabase.auth.getSession();
+
+  const headers: Record<string, string> = {};
+
+  // Adiciona token de autenticação do Supabase
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (session?.access_token) {
-    headers['Authorization'] = `Bearer ${session.access_token}`;
+    headers["Authorization"] = `Bearer ${session.access_token}`;
   }
-  
+
+  // Só adiciona Content-Type se tiver body
   if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
   }
-  
+
   const response = await fetch(url, {
     method,
     headers,
@@ -26,23 +59,50 @@ async function apiRequest(method, path, body?) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.error || 'Erro na requisição');
+    const error = data as ApiError;
+    throw new Error(error.error || "Erro na requisição");
   }
 
-  return data;
+  return data as T;
 }
 
 // ============================================================================
 // Auth
 // ============================================================================
 
-export async function signupUser(email, name) {
-  const response = await apiRequest('POST', '/auth/signup', { email, name });
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: "ADMIN" | "MANAGER" | "AGENT";
+  operationId: string | null;
+}
+
+interface SignupResponse {
+  user: User;
+}
+
+/**
+ * Cria um usuário no banco após signup no Supabase
+ * IMPORTANTE: Chamar logo após o usuário fazer signup
+ */
+export async function signupUser(email: string, name: string): Promise<User> {
+  const response = await apiRequest<SignupResponse>("POST", "/auth/signup", {
+    email,
+    name,
+  });
   return response.user;
 }
 
-export async function getCurrentUser() {
-  const response = await apiRequest('GET', '/auth/me');
+interface GetMeResponse {
+  user: User;
+}
+
+/**
+ * Retorna informações do usuário autenticado
+ */
+export async function getCurrentUser(): Promise<User> {
+  const response = await apiRequest<GetMeResponse>("GET", "/auth/me");
   return response.user;
 }
 
@@ -50,27 +110,90 @@ export async function getCurrentUser() {
 // Operations
 // ============================================================================
 
-export async function createOperation(name) {
-  const response = await apiRequest('POST', '/operations', { name });
+interface GetOperationResponse {
+  operation: Operation | null;
+}
+
+interface CreateOperationResponse {
+  operation: Operation;
+}
+interface UpdateOperationResponse {
+  operation: Operation;
+}
+
+export async function createOperation(name: string): Promise<Operation> {
+  const response = await apiRequest<CreateOperationResponse>(
+    "POST",
+    "/operations",
+    { name },
+  );
   return response.operation;
 }
 
-export async function getUserOperation() {
-  const response = await apiRequest('GET', '/operations');
+/**
+ * Retorna a operation do usuário autenticado
+ */
+export async function getUserOperation(): Promise<Operation | null> {
+  const response = await apiRequest<GetOperationResponse>("GET", "/operations");
   return response.operation;
+}
+export async function updateOperation(
+  id: string,
+  data: { name?: string; onboardingCompleted?: boolean },
+): Promise<Operation> {
+  const response = await apiRequest<UpdateOperationResponse>(
+    "PUT",
+    `/operations/${id}`,
+    data,
+  );
+  return response.operation;
+}
+
+export async function getOperations(): Promise<Operation[]> {
+  const response = await apiRequest<GetOperationResponse>("GET", "/operations");
+  return response.operation ? [response.operation] : [];
 }
 
 // ============================================================================
 // Agents
 // ============================================================================
 
-export async function createAgent(data) {
-  const response = await apiRequest('POST', '/agents', data);
+interface CreateAgentResponse {
+  agent: Agent;
+}
+
+interface GetAgentsResponse {
+  agents: (Agent & {
+    channels: Array<{
+      id: string;
+      name: string;
+      type: string;
+      status: string;
+    }>;
+  })[];
+}
+
+export type AgentWithChannels = GetAgentsResponse["agents"][number];
+
+export async function createAgent(data: {
+  name: string;
+  operationId: string;
+}): Promise<Agent> {
+  const response = await apiRequest<CreateAgentResponse>(
+    "POST",
+    "/agents",
+    data,
+  );
   return response.agent;
 }
 
-export async function getAgentsByOperation(operationId) {
-  const response = await apiRequest('GET', `/agents?operationId=${operationId}`);
+export async function getAgentsByOperation(
+  operationId: string,
+): Promise<AgentWithChannels[]> {
+  const response = await apiRequest<GetAgentsResponse>(
+    "GET",
+    `/agents?operationId=${operationId}`,
+  );
   return response.agents;
 }
 
@@ -78,98 +201,282 @@ export async function getAgentsByOperation(operationId) {
 // Channels (WhatsApp)
 // ============================================================================
 
-export async function createWhatsAppChannel(data) {
-  return apiRequest('POST', '/channels/whatsapp', data);
+// Tipo extendido com detalhes do WhatsApp (não vem do Prisma direto)
+export interface ChannelWithDetails extends Channel {
+  whatsappDetails?: {
+    sessionName: string;
+  };
 }
 
-export async function getChannelQRCode(channelId) {
-  return apiRequest('GET', `/channels/${channelId}/qr`);
+export interface CreateWhatsAppChannelResponse {
+  channel: ChannelWithDetails;
+  wahaSession?: {
+    name: string;
+    status: string;
+  };
 }
 
-export async function getChannelStatus(channelId) {
-  return apiRequest('GET', `/channels/${channelId}/status`);
+export async function createWhatsAppChannel(data: {
+  name: string;
+  operationId: string;
+  agentId?: string;
+  webhookUrl?: string;
+}): Promise<CreateWhatsAppChannelResponse> {
+  return apiRequest<CreateWhatsAppChannelResponse>(
+    "POST",
+    "/channels/whatsapp",
+    data,
+  );
 }
 
-export async function reconnectChannel(channelId) {
-  await apiRequest('POST', `/channels/${channelId}/reconnect`);
+export interface QRCodeResponse {
+  channelId: string;
+  qrCode?: string; // Base64 da imagem
+  qrValue?: string;
 }
 
-export async function deleteChannel(channelId) {
-  await apiRequest('DELETE', `/channels/${channelId}`);
+export async function getChannelQRCode(
+  channelId: string,
+): Promise<QRCodeResponse> {
+  return apiRequest<QRCodeResponse>("GET", `/channels/${channelId}/qr`);
+}
+
+export interface ChannelStatusResponse {
+  channelId: string;
+  type: string;
+  status: ChannelStatus;
+  wahaStatus?: string;
+  phoneNumber?: string;
+  pushName?: string;
+  error?: string;
+}
+
+export async function getChannelStatus(
+  channelId: string,
+): Promise<ChannelStatusResponse> {
+  return apiRequest<ChannelStatusResponse>(
+    "GET",
+    `/channels/${channelId}/status`,
+  );
+}
+
+export async function reconnectChannel(channelId: string): Promise<void> {
+  await apiRequest<void>("POST", `/channels/${channelId}/reconnect`);
+}
+
+export async function deleteChannel(channelId: string): Promise<void> {
+  await apiRequest<void>("DELETE", `/channels/${channelId}`);
 }
 
 // ============================================================================
 // Companies
 // ============================================================================
 
-export async function getCompanies(params?) {
+interface GetCompaniesParams {
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+interface GetCompaniesResponse {
+  companies: Company[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+interface GetCompanyResponse {
+  company: Company;
+}
+
+interface CompanyTimelineResponse {
+  timeline: Array<{
+    id: string;
+    type: string;
+    createdAt: string;
+    data: unknown;
+  }>;
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+export async function getCompanies(
+  params?: GetCompaniesParams,
+): Promise<GetCompaniesResponse> {
   const searchParams = new URLSearchParams();
-  if (params?.search) searchParams.set('search', params.search);
-  if (params?.limit) searchParams.set('limit', params.limit.toString());
-  if (params?.offset) searchParams.set('offset', params.offset.toString());
-  
-  return apiRequest('GET', `/companies?${searchParams}`);
+  if (params?.search) searchParams.set("search", params.search);
+  if (params?.limit) searchParams.set("limit", params.limit.toString());
+  if (params?.offset) searchParams.set("offset", params.offset.toString());
+
+  return apiRequest<GetCompaniesResponse>("GET", `/companies?${searchParams}`);
 }
 
-export async function createCompany(data) {
-  return apiRequest('POST', '/companies', data);
+export async function createCompany(data: {
+  taxId: string;
+  name: string;
+  alias?: string;
+}): Promise<Company> {
+  const response = await apiRequest<GetCompanyResponse>(
+    "POST",
+    "/companies",
+    data,
+  );
+  return response.company;
 }
 
-export async function getCompany(id) {
-  return apiRequest('GET', `/companies/${id}`);
+export async function getCompany(id: string): Promise<Company> {
+  const response = await apiRequest<GetCompanyResponse>(
+    "GET",
+    `/companies/${id}`,
+  );
+  return response.company;
 }
 
-export async function updateCompany(id, data) {
-  return apiRequest('PUT', `/companies/${id}`, data);
+export async function updateCompany(
+  id: string,
+  data: Partial<Pick<Company, "name" | "alias">>,
+): Promise<Company> {
+  const response = await apiRequest<GetCompanyResponse>(
+    "PUT",
+    `/companies/${id}`,
+    data,
+  );
+  return response.company;
 }
 
-export async function getCompanyTimeline(companyId, params?) {
+export async function getCompanyTimeline(
+  companyId: string,
+  params?: { limit?: number; offset?: number },
+): Promise<CompanyTimelineResponse> {
   const searchParams = new URLSearchParams();
-  if (params?.limit) searchParams.set('limit', params.limit.toString());
-  if (params?.offset) searchParams.set('offset', params.offset.toString());
-  
-  return apiRequest('GET', `/companies/${companyId}/timeline?${searchParams}`);
+  if (params?.limit) searchParams.set("limit", params.limit.toString());
+  if (params?.offset) searchParams.set("offset", params.offset.toString());
+
+  return apiRequest<CompanyTimelineResponse>(
+    "GET",
+    `/companies/${companyId}/timeline?${searchParams}`,
+  );
 }
 
 // ============================================================================
 // Opportunities
 // ============================================================================
 
-export async function getOpportunities(params?) {
+interface GetOpportunitiesParams {
+  stageId?: string;
+  agentId?: string;
+  companyId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+interface GetOpportunitiesResponse {
+  opportunities: Opportunity[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+interface GetOpportunityResponse {
+  opportunity: Opportunity;
+}
+
+interface KanbanColumn {
+  stage: Stage;
+  opportunities: Opportunity[];
+}
+
+interface GetOpportunitiesKanbanResponse {
+  columns: KanbanColumn[];
+}
+
+export async function getOpportunities(
+  params?: GetOpportunitiesParams,
+): Promise<GetOpportunitiesResponse> {
   const searchParams = new URLSearchParams();
-  if (params?.stageId) searchParams.set('stageId', params.stageId);
-  if (params?.agentId) searchParams.set('agentId', params.agentId);
-  if (params?.companyId) searchParams.set('companyId', params.companyId);
-  if (params?.limit) searchParams.set('limit', params.limit.toString());
-  if (params?.offset) searchParams.set('offset', params.offset.toString());
-  
-  return apiRequest('GET', `/opportunities?${searchParams}`);
+  if (params?.stageId) searchParams.set("stageId", params.stageId);
+  if (params?.agentId) searchParams.set("agentId", params.agentId);
+  if (params?.companyId) searchParams.set("companyId", params.companyId);
+  if (params?.limit) searchParams.set("limit", params.limit.toString());
+  if (params?.offset) searchParams.set("offset", params.offset.toString());
+
+  return apiRequest<GetOpportunitiesResponse>(
+    "GET",
+    `/opportunities?${searchParams}`,
+  );
 }
 
-export async function getOpportunitiesKanban() {
-  return apiRequest('GET', '/opportunities/kanban');
+export async function getOpportunitiesKanban(): Promise<GetOpportunitiesKanbanResponse> {
+  return apiRequest<GetOpportunitiesKanbanResponse>(
+    "GET",
+    "/opportunities/kanban",
+  );
 }
 
-export async function createOpportunity(data) {
-  return apiRequest('POST', '/opportunities', data);
+export async function createOpportunity(data: {
+  companyId: string;
+  stageId: string;
+  agentId?: string;
+  estimatedValue?: number;
+  notes?: string;
+}): Promise<Opportunity> {
+  const response = await apiRequest<GetOpportunityResponse>(
+    "POST",
+    "/opportunities",
+    data,
+  );
+  return response.opportunity;
 }
 
-export async function updateOpportunity(id, data) {
-  return apiRequest('PUT', `/opportunities/${id}`, data);
+export async function updateOpportunity(
+  id: string,
+  data: Partial<
+    Pick<Opportunity, "stageId" | "agentId" | "estimatedValue" | "notes">
+  >,
+): Promise<Opportunity> {
+  const response = await apiRequest<GetOpportunityResponse>(
+    "PUT",
+    `/opportunities/${id}`,
+    data,
+  );
+  return response.opportunity;
 }
 
-export async function moveOpportunity(id, stageId) {
-  return apiRequest('PUT', `/opportunities/${id}/move`, { stageId });
+export async function moveOpportunity(
+  id: string,
+  stageId: string,
+): Promise<Opportunity> {
+  const response = await apiRequest<GetOpportunityResponse>(
+    "PUT",
+    `/opportunities/${id}/move`,
+    { stageId },
+  );
+  return response.opportunity;
 }
 
-export async function deleteOpportunity(id) {
-  await apiRequest('DELETE', `/opportunities/${id}`);
+export async function deleteOpportunity(id: string): Promise<void> {
+  await apiRequest<void>("DELETE", `/opportunities/${id}`);
 }
 
 // ============================================================================
 // Stages
 // ============================================================================
 
-export async function getStages() {
-  return apiRequest('GET', '/stages');
+interface GetStagesResponse {
+  stages: Stage[];
+}
+
+export async function getStages(): Promise<Stage[]> {
+  const response = await apiRequest<GetStagesResponse>("GET", "/stages");
+  return response.stages;
 }

@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
-import { useOnboarding } from './useOnboarding';
-import { 
-  ProgressBar, 
-  WelcomeStep, 
-  VendedoresStep, 
-  FinishStep 
-} from './components';
-import * as api from '../../lib/api';
+import { useEffect, useState } from "react";
+import * as api from "../../lib/api";
+import {
+  FinishStep,
+  ProgressBar,
+  VendedoresStep,
+  WelcomeStep,
+} from "./components";
+import { useOnboarding } from "./useOnboarding";
 
 interface OnboardingPageProps {
   onComplete: () => void;
@@ -30,6 +30,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   const [operationId, setOperationId] = useState<string | null>(null);
   const [isCreatingOperation, setIsCreatingOperation] = useState(false);
   const [isCheckingOperation, setIsCheckingOperation] = useState(true);
+  const [isFinishingOnboarding, setIsFinishingOnboarding] = useState(false);
   // Flag que indica se a operação já existia antes do onboarding
   const [hasExistingOperation, setHasExistingOperation] = useState(false);
 
@@ -39,60 +40,68 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
       try {
         // Busca a operation do usuário autenticado
         const operation = await api.getUserOperation();
-        
+
         if (operation) {
+          if (operation.onboardingCompleted) {
+            onComplete();
+            return;
+          }
           // Já existe operação, usa ela e pula para vendedores
           setOperationId(operation.id);
           setOperationName(operation.name);
           setHasExistingOperation(true);
-          
+
           // Busca os agents/vendedores existentes
           const agents = await api.getAgentsByOperation(operation.id);
-          
+
           // Converte agents para o formato de vendedores do onboarding
           const existingVendedores = await Promise.all(
             agents.map(async (agent) => {
               const channel = agent.channels[0]; // Pega o primeiro canal do agent
-              
-              let vendedorStatus: 'pending' | 'connecting' | 'connected' | 'error' = 'pending';
+
+              let vendedorStatus:
+                | "pending"
+                | "connecting"
+                | "connected"
+                | "error" = "pending";
               let phone: string | undefined;
               let qrCode: string | undefined;
-              
+
               if (channel) {
                 try {
                   // Verifica o status real do channel no WAHA
                   const channelStatus = await api.getChannelStatus(channel.id);
-                  
-                  if (channelStatus.status === 'WORKING') {
-                    vendedorStatus = 'connected';
+
+                  if (channelStatus.status === "WORKING") {
+                    vendedorStatus = "connected";
                     phone = channelStatus.phoneNumber;
-                  } else if (channelStatus.status === 'FAILED') {
-                    vendedorStatus = 'error';
+                  } else if (channelStatus.status === "FAILED") {
+                    vendedorStatus = "error";
                   } else {
                     // STARTING ou SCAN_QR - tenta buscar o QR
                     try {
                       const qrData = await api.getChannelQRCode(channel.id);
                       if (qrData.qrCode) {
                         // Tem QR - mostra como pending para exibir o QR
-                        qrCode = qrData.qrCode.startsWith('data:') 
-                          ? qrData.qrCode 
+                        qrCode = qrData.qrCode.startsWith("data:")
+                          ? qrData.qrCode
                           : `data:image/png;base64,${qrData.qrCode}`;
-                        vendedorStatus = 'pending';
+                        vendedorStatus = "pending";
                       } else {
                         // Não tem QR ainda - mostra como connecting
-                        vendedorStatus = 'connecting';
+                        vendedorStatus = "connecting";
                       }
                     } catch {
                       // Erro ao buscar QR - mostra como connecting
-                      vendedorStatus = 'connecting';
+                      vendedorStatus = "connecting";
                     }
                   }
                 } catch (error) {
-                  console.error('Erro ao verificar status do channel:', error);
-                  vendedorStatus = 'error';
+                  console.error("Erro ao verificar status do channel:", error);
+                  vendedorStatus = "error";
                 }
               }
-              
+
               return {
                 id: agent.id,
                 name: agent.name,
@@ -104,15 +113,23 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               };
             })
           );
-          
+
           if (existingVendedores.length > 0) {
             setVendedores(existingVendedores);
           }
-          
-          goToStep(2, 'vendedores');
+
+          const hasConnectedVendedor = existingVendedores.some(
+            (vendedor) => vendedor.status === "connected"
+          );
+
+          if (hasConnectedVendedor) {
+            goToStep(4, "finish");
+          } else {
+            goToStep(2, "vendedores");
+          }
         }
       } catch (error) {
-        console.error('Erro ao verificar operation do usuário:', error);
+        console.error("Erro ao verificar operation do usuário:", error);
       } finally {
         setIsCheckingOperation(false);
       }
@@ -122,29 +139,54 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const connectedVendedores = state.vendedores.filter(v => v.status === 'connected');
+  const connectedVendedores = state.vendedores.filter(
+    (v) => v.status === "connected"
+  );
 
   // Handler para quando sair do Welcome step - cria a operation
   const handleWelcomeNext = async () => {
     if (isCreatingOperation) return;
-    
+    if (operationId) {
+      nextStep();
+      return;
+    }
+
     setIsCreatingOperation(true);
-    
+
     try {
       // Cria a Operation no backend
       const operation = await api.createOperation(state.operationName);
       setOperationId(operation.id);
       nextStep();
     } catch (error) {
-      console.error('Erro ao criar operação:', error);
-      alert('Erro ao criar operação. Tente novamente.');
+      console.error("Erro ao criar operação:", error);
     } finally {
       setIsCreatingOperation(false);
     }
   };
 
   const handleFinish = async () => {
-    console.log('Onboarding completo:', state);
+    if (isFinishingOnboarding) return;
+    setIsFinishingOnboarding(true);
+    console.log("Onboarding completo:", state);
+    try {
+      if (!operationId) {
+        throw new Error("Operação não encontrada");
+      }
+
+      const updated = await api.updateOperation(operationId, {
+        onboardingCompleted: true,
+      });
+
+      if (!updated.onboardingCompleted) {
+        throw new Error("Falha ao marcar onboarding como concluído");
+      }
+    } catch (error) {
+      console.error("Erro ao marcar onboarding como concluído:", error);
+      return;
+    } finally {
+      setIsFinishingOnboarding(false);
+    }
     onComplete();
   };
 
@@ -171,7 +213,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
 
   const renderStep = () => {
     switch (currentStepName) {
-      case 'welcome':
+      case "welcome":
         return (
           <WelcomeStep
             operationName={state.operationName}
@@ -180,8 +222,8 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
             isLoading={isCreatingOperation}
           />
         );
-      
-      case 'vendedores':
+
+      case "vendedores":
         if (!operationId) {
           // Fallback caso não tenha operationId (não deveria acontecer)
           prevStep();
@@ -198,22 +240,23 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
             onBack={hasExistingOperation ? undefined : handleVendedoresBack}
           />
         );
-      
-      case 'tags':
+
+      case "tags":
         // Pulando tags por enquanto - vai direto para finish
         nextStep();
         return null;
-      
-      case 'finish':
+
+      case "finish":
         return (
           <FinishStep
             operationName={state.operationName}
             vendedoresCount={connectedVendedores.length}
             onFinish={handleFinish}
             onBack={prevStep}
+            isLoading={isFinishingOnboarding}
           />
         );
-      
+
       default:
         return null;
     }
@@ -222,11 +265,11 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-3xl mx-auto px-4 py-12">
-        <ProgressBar 
-          currentStep={state.currentStep} 
-          totalSteps={state.totalSteps} 
+        <ProgressBar
+          currentStep={state.currentStep}
+          totalSteps={state.totalSteps}
         />
-        
+
         {renderStep()}
       </div>
     </div>

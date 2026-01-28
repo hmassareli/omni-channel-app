@@ -5,13 +5,15 @@ interface FinishStepProps {
   vendedoresCount: number;
   onFinish: () => void;
   onBack: () => void;
+  isLoading?: boolean;
 }
 
 export function FinishStep({ 
   operationName, 
   vendedoresCount, 
   onFinish, 
-  onBack 
+  onBack,
+  isLoading
 }: FinishStepProps) {
   return (
     <div className="max-w-lg mx-auto text-center">
@@ -56,10 +58,15 @@ export function FinishStep({
         </button>
         <button
           onClick={onFinish}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors"
+          disabled={isLoading}
+          className={`flex items-center gap-2 px-6 py-3 font-medium rounded-lg transition-colors ${
+            isLoading
+              ? "bg-blue-300 text-white cursor-not-allowed"
+              : "bg-blue-500 text-white hover:bg-blue-600"
+          }`}
         >
           <Rocket className="w-5 h-5" />
-          Começar a usar
+          {isLoading ? "Salvando..." : "Começar a usar"}
         </button>
       </div>
     </div>
