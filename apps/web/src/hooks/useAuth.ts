@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import type { User, Session, AuthError } from "@supabase/supabase-js";
+import type { User, Session, AuthError, AuthChangeEvent } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 
 interface AuthState {
@@ -47,14 +47,16 @@ export function useAuth() {
     // Escuta mudanças na autenticação
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(
+      (_event: AuthChangeEvent, session: Session | null) => {
       setAuthState({
         user: session?.user ?? null,
         session: session,
         loading: false,
         error: null,
       });
-    });
+      }
+    );
 
     return () => {
       subscription.unsubscribe();

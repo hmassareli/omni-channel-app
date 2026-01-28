@@ -244,6 +244,7 @@ model RawWhatsappMessage {
 model Operation {
   id        String   @id @default(uuid())
   name      String
+  onboardingCompleted Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

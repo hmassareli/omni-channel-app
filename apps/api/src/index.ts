@@ -48,6 +48,9 @@ export async function buildApp() {
 
   await app.register(cors, {
     origin: "*", // Em produção, mude para a URL do seu frontend
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    maxAge: 86400,
   });
 
   // Rate limiting: previne ataques de força bruta

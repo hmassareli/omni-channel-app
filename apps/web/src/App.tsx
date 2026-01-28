@@ -1,11 +1,11 @@
 import { LogOut } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useAuth } from "./hooks/useAuth";
-import { LoginPage } from "./components/LoginPage";
+import { useEffect, useState } from "react";
 import { AuthCallback } from "./components/AuthCallback";
-import { ContactTimeline } from "./pages/ContactTimeline";
+import { LoginPage } from "./components/LoginPage";
 import { OnboardingPage } from "./features/onboarding";
+import { useAuth } from "./hooks/useAuth";
 import * as api from "./lib/api";
+import { ContactTimeline } from "./pages/ContactTimeline";
 
 // --- Componentes de Layout ---
 
@@ -108,7 +108,7 @@ function getRoute(): "callback" | "contact" | "onboarding" | "home" {
 function Dashboard() {
   const { user, signOut } = useAuth();
   const route = getRoute();
-  
+
   // Estado para controlar se precisa fazer onboarding
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
@@ -122,22 +122,25 @@ function Dashboard() {
 
       try {
         // 1. Garante que o usuário existe no banco
-        const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user.email.split('@')[0];
-        
+        const userName =
+          user?.user_metadata?.full_name ||
+          user?.user_metadata?.name ||
+          user.email.split("@")[0];
+
         await api.signupUser(user.email, userName);
 
         // 2. Verifica se tem operation
         const operation = await api.getUserOperation();
-        setNeedsOnboarding(!operation);
+        setNeedsOnboarding(!operation?.onboardingCompleted);
       } catch (error) {
-        console.error('[Dashboard] Erro ao verificar onboarding:', error);
+        console.error("[Dashboard] Erro ao verificar onboarding:", error);
         // Se for erro de "já cadastrado", ignora
-        if (error instanceof Error && error.message.includes('já cadastrado')) {
+        if (error instanceof Error && error.message.includes("já cadastrado")) {
           try {
             const operation = await api.getUserOperation();
-            setNeedsOnboarding(!operation);
+            setNeedsOnboarding(!operation?.onboardingCompleted);
           } catch (opError) {
-            console.error('[Dashboard] Erro ao buscar operation:', opError);
+            console.error("[Dashboard] Erro ao buscar operation:", opError);
             setNeedsOnboarding(true);
           }
         } else {
@@ -147,7 +150,7 @@ function Dashboard() {
         setCheckingOnboarding(false);
       }
     };
-    
+
     checkOnboarding();
   }, [user]);
 
@@ -160,19 +163,25 @@ function Dashboard() {
   }
 
   // Se precisa de onboarding (e não está na rota de onboarding), redireciona
-  if (needsOnboarding && route !== 'onboarding') {
-    window.location.href = '/onboarding';
+  if (needsOnboarding && route !== "onboarding") {
+    window.location.href = "/onboarding";
+    return <LoadingScreen />;
+  }
+
+  // Se não precisa de onboarding, evita ficar na rota de onboarding
+  if (needsOnboarding === false && route === "onboarding") {
+    window.location.href = "/";
     return <LoadingScreen />;
   }
 
   // Se está na rota de onboarding
-  if (route === 'onboarding') {
+  if (route === "onboarding") {
     return (
-      <OnboardingPage 
+      <OnboardingPage
         onComplete={() => {
           setNeedsOnboarding(false);
-          window.location.href = '/';
-        }} 
+          window.location.href = "/";
+        }}
       />
     );
   }

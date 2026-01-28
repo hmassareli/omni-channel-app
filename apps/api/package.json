@@ -11,11 +11,13 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:server": "dotenv -e .env.server -- tsx watch src/index.ts",
     "test": "dotenv -e .env.test -- vitest",
     "test:run": "dotenv -e .env.test -- vitest run",
     "test:coverage": "dotenv -e .env.test -- vitest run --coverage",
     "db:migrate": "dotenv -e .env -- prisma migrate dev",
     "db:migrate:test": "dotenv -e .env.test -- prisma migrate deploy",
+    "db:migrate:server": "dotenv -e .env.server -- prisma migrate deploy",
     "db:studio": "dotenv -e .env -- prisma studio",
     "db:generate": "dotenv -e .env -- prisma generate",
     "build": "tsc",
