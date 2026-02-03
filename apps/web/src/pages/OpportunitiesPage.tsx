@@ -1,11 +1,5 @@
-import {
-  MoreHorizontal,
-  Plus,
-  User,
-  X,
-} from "lucide-react";
+import { MoreHorizontal, Plus, User, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import * as api from "../lib/api";
 
 // ============================================================================
@@ -30,7 +24,10 @@ const OpportunityCardComponent = ({ opportunity, onClick }) => (
     </div>
 
     <p className="text-sm text-gray-500 mb-3">
-      {opportunity.company.taxId.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")}
+      {opportunity.company.taxId.replace(
+        /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
+        "$1.$2.$3/$4-$5",
+      )}
     </p>
 
     {opportunity.estimatedValue && (
@@ -57,7 +54,13 @@ const OpportunityCardComponent = ({ opportunity, onClick }) => (
   </div>
 );
 
-const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companies, stages }) => {
+const CreateOpportunityModal = ({
+  isOpen,
+  onClose,
+  onCreated,
+  companies,
+  stages,
+}) => {
   const [companyId, setCompanyId] = useState("");
   const [stageId, setStageId] = useState("");
   const [estimatedValue, setEstimatedValue] = useState("");
@@ -89,7 +92,9 @@ const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companies, stages 
       setEstimatedValue("");
       setNotes("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao criar oportunidade");
+      setError(
+        err instanceof Error ? err.message : "Erro ao criar oportunidade",
+      );
     } finally {
       setLoading(false);
     }
@@ -240,7 +245,6 @@ const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companies, stages 
 // ============================================================================
 
 export function OpportunitiesPage() {
-  const navigate = useNavigate();
   const [kanbanData, setKanbanData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -251,14 +255,15 @@ export function OpportunitiesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [kanbanResponse, companiesResponse, stagesResponse] = await Promise.all([
-        api.getOpportunitiesKanban(),
-        api.getCompanies({ limit: 1000 }),
-        api.getStages(),
-      ]);
-      setKanbanData(kanbanResponse.kanban);
+      const [kanbanResponse, companiesResponse, stagesResponse] =
+        await Promise.all([
+          api.getOpportunitiesKanban(),
+          api.getCompanies({ limit: 1000 }),
+          api.getStages(),
+        ]);
+      setKanbanData(kanbanResponse.columns);
       setCompanies(companiesResponse.companies);
-      setStages(stagesResponse.stages);
+      setStages(stagesResponse);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
     } finally {
@@ -271,7 +276,7 @@ export function OpportunitiesPage() {
   }, []);
 
   const handleOpportunityClick = (opportunity) => {
-    navigate(`/companies/${opportunity.company.id}`);
+    window.location.href = `/company/${opportunity.company.id}`;
   };
 
   const handleDragStart = (e, opportunityId, fromStageId) => {
@@ -307,7 +312,9 @@ export function OpportunitiesPage() {
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-800">Oportunidades</h1>
+            <h1 className="text-2xl font-semibold text-gray-800">
+              Oportunidades
+            </h1>
             <p className="text-gray-500 mt-1">
               {kanbanData.reduce((acc, k) => acc + k.count, 0)} oportunidades em{" "}
               {kanbanData.length} estágios
@@ -367,7 +374,9 @@ export function OpportunitiesPage() {
         ) : filteredKanban.length === 0 ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
-              <p className="text-gray-500 mb-4">Nenhuma oportunidade encontrada</p>
+              <p className="text-gray-500 mb-4">
+                Nenhuma oportunidade encontrada
+              </p>
               <button
                 onClick={() => setShowModal(true)}
                 className="text-purple-600 hover:text-purple-700 font-medium"
@@ -387,7 +396,9 @@ export function OpportunitiesPage() {
               >
                 <div
                   className="rounded-t-lg px-4 py-3 mb-2"
-                  style={{ backgroundColor: kanbanStage.stage.color || "#8b5cf6" }}
+                  style={{
+                    backgroundColor: kanbanStage.stage.color || "#8b5cf6",
+                  }}
                 >
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-white">

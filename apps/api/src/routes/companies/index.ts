@@ -8,17 +8,11 @@ import { authMiddleware } from "../../middleware/auth";
 // CNPJ Lookup Service (CNPJA API)
 // ============================================================================
 
-interface CNPJAPIData {
-  tax_id: string;
-  name: string;
+interface CNPJAPIOffice {
+  taxId: string;
   alias: string;
   status?: { id: number; text: string };
   founded?: string;
-  equity?: { value: number; formated: string };
-  size?: { id: number; text: string };
-  main_activity?: { id: number; text: string };
-  side_activities?: Array<{ id: number; text: string }>;
-  nature?: { id: number; text: string };
   address?: {
     street?: string;
     number?: string;
@@ -27,19 +21,28 @@ interface CNPJAPIData {
     city?: string;
     state?: string;
     zip?: string;
-    country?: { id: number; text: string };
+    country?: { id: number; name: string };
     municipality?: { id: number };
   };
   phones?: Array<{ type: string; area: string; number: string }>;
   emails?: Array<{ ownership: string; address: string; domain: string }>;
-  members?: Array<{
-    since?: string;
-    role?: { id: number; text: string };
-    person?: { id: string; name: string; type: string; tax_id?: string; age?: number };
-  }>;
+  company?: {
+    id: number;
+    name: string;
+    equity?: number;
+    size?: { id: number; text: string };
+    nature?: { id: number; text: string };
+    members?: Array<{
+      since?: string;
+      role?: { id: number; text: string };
+      person?: { id: string; name: string; type: string; taxId?: string; age?: number };
+    }>;
+  };
+  mainActivity?: { id: number; text: string };
+  sideActivities?: Array<{ id: number; text: string }>;
 }
 
-async function fetchEmpresaPorCNPJ(cnpj: string): Promise<CNPJAPIData | null> {
+async function fetchEmpresaPorCNPJ(cnpj: string): Promise<CNPJAPIOffice | null> {
   const CNPJA_API_KEY = process.env.CNPJA_API_KEY;
   
   if (!CNPJA_API_KEY) {
@@ -50,9 +53,9 @@ async function fetchEmpresaPorCNPJ(cnpj: string): Promise<CNPJAPIData | null> {
   const cleanCnpj = cnpj.replace(/\D/g, "");
 
   try {
-    const response = await fetch(`https://api.cnpja.com/companies/${cleanCnpj}`, {
+    const response = await fetch(`https://api.cnpja.com/office/${cleanCnpj}`, {
       headers: {
-        "Authorization": `Bearer ${CNPJA_API_KEY}`,
+        "Authorization": CNPJA_API_KEY,
         "Content-Type": "application/json",
       },
     });
@@ -64,30 +67,30 @@ async function fetchEmpresaPorCNPJ(cnpj: string): Promise<CNPJAPIData | null> {
       throw new Error(`CNPJA API error: ${response.status}`);
     }
 
-    return (await response.json()) as CNPJAPIData | null;
+    return (await response.json()) as CNPJAPIOffice | null;
   } catch (error) {
     console.error("[CNPJA] Erro ao buscar empresa:", error);
     return null;
   }
 }
 
-function mapCNPJDataToCompany(data: CNPJAPIData) {
+function mapCNPJDataToCompany(data: CNPJAPIOffice) {
   return {
-    taxId: data.tax_id,
-    name: data.name,
+    taxId: data.taxId,
+    name: data.company?.name || data.alias,
     alias: data.alias,
     status: data.status?.text,
     statusId: data.status?.id,
-    statusDate: data.founded,
+    statusDate: data.founded ? new Date(data.founded) : null,
     founded: data.founded ? new Date(data.founded) : null,
-    equity: data.equity?.value,
-    sizeId: data.size?.id,
-    sizeText: data.size?.text,
-    mainActivityId: data.main_activity?.id,
-    mainActivityText: data.main_activity?.text,
-    sideActivities: data.side_activities || [],
-    natureId: data.nature?.id,
-    natureText: data.nature?.text,
+    equity: data.company?.equity,
+    sizeId: data.company?.size?.id,
+    sizeText: data.company?.size?.text,
+    mainActivityId: data.mainActivity?.id,
+    mainActivityText: data.mainActivity?.text,
+    sideActivities: data.sideActivities || [],
+    natureId: data.company?.nature?.id,
+    natureText: data.company?.nature?.text,
     addressStreet: data.address?.street,
     addressNumber: data.address?.number,
     addressDetails: data.address?.details,
@@ -97,10 +100,10 @@ function mapCNPJDataToCompany(data: CNPJAPIData) {
     addressZip: data.address?.zip,
     addressMunicipality: data.address?.municipality?.id,
     addressCountryId: data.address?.country?.id,
-    addressCountryName: data.address?.country?.text,
+    addressCountryName: data.address?.country?.name,
     phones: data.phones,
     emails: data.emails,
-    members: data.members,
+    members: data.company?.members,
     sourceApi: "CNPJA" as const,
     apiUpdatedAt: new Date(),
     wealthSigns: {},
@@ -358,5 +361,43 @@ export async function companiesRoutes(app: FastifyInstance) {
     });
 
     return reply.send({ insights });
+  });
+
+  // Lookup CNPJ - retorna dados da API sem criar empresa
+  app.get("/lookup/:cnpj", { preHandler: authMiddleware }, async (request, reply) => {
+    const { cnpj } = z.object({ cnpj: z.string() }).parse(request.params);
+    const cleanCnpj = cnpj.replace(/\D/g, "");
+
+    if (cleanCnpj.length !== 14) {
+      return reply.status(400).send({ error: "CNPJ inválido" });
+    }
+
+    // Verifica se já existe no banco
+    const existing = await prisma.company.findUnique({
+      where: { taxId: cleanCnpj },
+    });
+
+    if (existing) {
+      return reply.send({ 
+        company: existing,
+        source: "database",
+        exists: true,
+      });
+    }
+
+    // Busca na API
+    const cnpjData = await fetchEmpresaPorCNPJ(cleanCnpj);
+
+    if (!cnpjData) {
+      return reply.status(404).send({ error: "CNPJ não encontrado" });
+    }
+
+    const companyData = mapCNPJDataToCompany(cnpjData);
+
+    return reply.send({
+      company: companyData,
+      source: "api",
+      exists: false,
+    });
   });
 }

@@ -208,6 +208,11 @@ export interface ChannelWithDetails extends Channel {
   };
 }
 
+export async function getChannels(): Promise<ChannelWithDetails[]> {
+  const response = await apiRequest<{ channels: ChannelWithDetails[] }>("GET", "/channels");
+  return response.channels;
+}
+
 export interface CreateWhatsAppChannelResponse {
   channel: ChannelWithDetails;
   wahaSession?: {
@@ -319,8 +324,8 @@ export async function getCompanies(
 }
 
 export async function createCompany(data: {
-  taxId: string;
-  name: string;
+  cnpj: string;
+  name?: string;
   alias?: string;
 }): Promise<Company> {
   const response = await apiRequest<GetCompanyResponse>(
@@ -329,6 +334,17 @@ export async function createCompany(data: {
     data,
   );
   return response.company;
+}
+
+export interface LookupCNPJResponse {
+  company: Partial<Company>;
+  source: "database" | "api";
+  exists: boolean;
+}
+
+export async function lookupCNPJ(cnpj: string): Promise<LookupCNPJResponse> {
+  const cleanCnpj = cnpj.replace(/\D/g, "");
+  return apiRequest<LookupCNPJResponse>("GET", `/companies/lookup/${cleanCnpj}`);
 }
 
 export async function getCompany(id: string): Promise<Company> {
@@ -479,4 +495,146 @@ interface GetStagesResponse {
 export async function getStages(): Promise<Stage[]> {
   const response = await apiRequest<GetStagesResponse>("GET", "/stages");
   return response.stages;
+}
+
+// ============================================================================
+// Contacts
+// ============================================================================
+
+interface ContactWithIdentities {
+  id: string;
+  name: string | null;
+  identities: Array<{ id: string; type: string; value: string }>;
+  company: { id: string; name: string; alias: string | null } | null;
+  _count: { conversations: number; messages: number };
+}
+
+interface GetContactsParams {
+  search?: string;
+  unlinked?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+interface GetContactsResponse {
+  contacts: ContactWithIdentities[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+export async function getContacts(params?: GetContactsParams): Promise<GetContactsResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set("search", params.search);
+  if (params?.unlinked) searchParams.set("unlinked", "true");
+  if (params?.limit) searchParams.set("limit", params.limit.toString());
+  if (params?.offset) searchParams.set("offset", params.offset.toString());
+
+  return apiRequest<GetContactsResponse>("GET", `/contacts?${searchParams}`);
+}
+
+export async function linkContactToCompany(contactId: string, companyId: string): Promise<ContactWithIdentities> {
+  const response = await apiRequest<{ contact: ContactWithIdentities }>(
+    "PUT",
+    `/contacts/${contactId}/link-company`,
+    { companyId }
+  );
+  return response.contact;
+}
+
+interface CreateContactData {
+  name?: string;
+  phone?: string;
+  email?: string;
+  companyId?: string;
+  role?: string;
+}
+
+interface CreateContactResponse {
+  contact: {
+    id: string;
+    name: string | null;
+    identities: Array<{ type: string; value: string }>;
+  };
+}
+
+export async function createContact(data: CreateContactData): Promise<CreateContactResponse["contact"]> {
+  const response = await apiRequest<CreateContactResponse>("POST", "/contacts", data);
+  return response.contact;
+}
+
+// Chats do WhatsApp (via WAHA)
+export interface WhatsAppChat {
+  waId: string;
+  chatId: string;
+  name: string | null;
+  picture: string | null;
+  lastMessage: {
+    body: string;
+    timestamp: number;
+    fromMe: boolean;
+  } | null;
+  linked: boolean;
+  contact: {
+    id: string;
+    name: string | null;
+    company: { id: string; name: string; alias: string | null } | null;
+  } | null;
+}
+
+interface WhatsAppChatsPagination {
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  totalFetched: number;
+}
+
+interface GetWhatsAppChatsResponse {
+  chats: WhatsAppChat[];
+  pagination: WhatsAppChatsPagination;
+}
+
+export interface GetWhatsAppChatsResult {
+  chats: WhatsAppChat[];
+  hasMore: boolean;
+}
+
+export async function getWhatsAppChats(
+  channelId: string,
+  params?: { search?: string; limit?: number; offset?: number }
+): Promise<GetWhatsAppChatsResult> {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set("search", params.search);
+  if (params?.limit) searchParams.set("limit", params.limit.toString());
+  if (params?.offset) searchParams.set("offset", params.offset.toString());
+
+  const response = await apiRequest<GetWhatsAppChatsResponse>(
+    "GET",
+    `/channels/${channelId}/chats?${searchParams}`
+  );
+  return {
+    chats: response.chats,
+    hasMore: response.pagination.hasMore,
+  };
+}
+
+interface LinkWhatsAppChatData {
+  waId: string;
+  companyId: string;
+  channelId: string;
+  name?: string;
+  role?: string;
+}
+
+interface LinkWhatsAppChatResponse {
+  contact: ContactWithIdentities;
+  conversation: { id: string };
+  created: boolean;
+}
+
+export async function linkWhatsAppChat(data: LinkWhatsAppChatData): Promise<LinkWhatsAppChatResponse> {
+  return apiRequest<LinkWhatsAppChatResponse>("POST", "/contacts/link-whatsapp", data);
 }

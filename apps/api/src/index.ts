@@ -55,10 +55,10 @@ export async function buildApp() {
     maxAge: 86400,
   });
 
-  // Rate limiting: previne ataques de força bruta
+  // Rate limiting
   await app.register(rateLimit, {
-    max: 100, // 100 requisições
-    timeWindow: "15 minutes", // Por janela de 15 minutos
+    max: 1000,
+    timeWindow: "1 minute",
     errorResponseBuilder: () => ({
       error: "Muitas requisições. Tente novamente em alguns minutos.",
       statusCode: 429,

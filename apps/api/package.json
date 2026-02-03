@@ -20,7 +20,7 @@
     "db:migrate:server": "dotenv -e .env.server -- prisma migrate deploy",
     "db:studio": "dotenv -e .env -- prisma studio",
     "db:generate": "dotenv -e .env -- prisma generate",
-    "build": "echo 'Skipping type check - using tsx for runtime'",
+    "build": "tsc",
     "start": "node dist/src/index.js"
   },
   "keywords": [],

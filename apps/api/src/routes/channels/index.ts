@@ -1,8 +1,8 @@
 import { ChannelStatus, ChannelType } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../../prisma";
 import { authMiddleware } from "../../middleware/auth";
+import { prisma } from "../../prisma";
 import * as waha from "../../services/waha";
 
 // ============================================================================
@@ -29,114 +29,120 @@ export async function channelsRoutes(app: FastifyInstance) {
    * POST /channels/whatsapp
    * Cria um novo canal WhatsApp e inicia sessão no WAHA
    */
-  app.post("/whatsapp", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const body = createChannelSchema.parse(request.body);
+  app.post(
+    "/whatsapp",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const body = createChannelSchema.parse(request.body);
 
-    // Valida que está criando na sua própria operation
-    if (!user.operationId) {
-      return reply.status(403).send({ error: "Usuário sem operation vinculada" });
-    }
-
-    if (body.operationId !== user.operationId) {
-      return reply.status(403).send({ error: "Acesso negado" });
-    }
-
-    // Verifica se a operation existe
-    const operation = await prisma.operation.findUnique({
-      where: { id: body.operationId },
-    });
-
-    if (!operation) {
-      return reply.status(404).send({ error: "Operation não encontrada" });
-    }
-
-    // Verifica se o agent existe (se fornecido)
-    if (body.agentId) {
-      const agent = await prisma.agent.findUnique({
-        where: { id: body.agentId },
-      });
-      if (!agent) {
-        return reply.status(404).send({ error: "Agent não encontrado" });
+      // Valida que está criando na sua própria operation
+      if (!user.operationId) {
+        return reply
+          .status(403)
+          .send({ error: "Usuário sem operation vinculada" });
       }
-    }
 
-    // Gera nome único para sessão WAHA
-    const sessionName = `channel-${Date.now()}`;
+      if (body.operationId !== user.operationId) {
+        return reply.status(403).send({ error: "Acesso negado" });
+      }
 
-    // Cria o canal no banco
-    const channel = await prisma.channel.create({
-      data: {
-        name: body.name,
-        type: ChannelType.WHATSAPP,
-        status: ChannelStatus.PENDING,
-        operationId: body.operationId,
-        agentId: body.agentId,
-        whatsappDetails: {
-          create: {
-            sessionName,
-            webhookUrl: body.webhookUrl,
+      // Verifica se a operation existe
+      const operation = await prisma.operation.findUnique({
+        where: { id: body.operationId },
+      });
+
+      if (!operation) {
+        return reply.status(404).send({ error: "Operation não encontrada" });
+      }
+
+      // Verifica se o agent existe (se fornecido)
+      if (body.agentId) {
+        const agent = await prisma.agent.findUnique({
+          where: { id: body.agentId },
+        });
+        if (!agent) {
+          return reply.status(404).send({ error: "Agent não encontrado" });
+        }
+      }
+
+      // Gera nome único para sessão WAHA
+      const sessionName = `channel-${Date.now()}`;
+
+      // Cria o canal no banco
+      const channel = await prisma.channel.create({
+        data: {
+          name: body.name,
+          type: ChannelType.WHATSAPP,
+          status: ChannelStatus.PENDING,
+          operationId: body.operationId,
+          agentId: body.agentId,
+          whatsappDetails: {
+            create: {
+              sessionName,
+              webhookUrl: body.webhookUrl,
+            },
           },
         },
-      },
-      include: {
-        whatsappDetails: true,
-      },
-    });
-
-    try {
-      // Cria sessão no WAHA
-      const wahaSession = await waha.createSession({
-        name: sessionName,
-        start: true,
-        config: {
-          webhooks: body.webhookUrl
-            ? [
-                {
-                  url: body.webhookUrl,
-                  events: ["message", "session.status"],
-                },
-              ]
-            : undefined,
+        include: {
+          whatsappDetails: true,
         },
       });
 
-      // Atualiza status baseado na resposta do WAHA
-      const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
+      try {
+        // Cria sessão no WAHA
+        const wahaSession = await waha.createSession({
+          name: sessionName,
+          start: true,
+          config: {
+            webhooks: body.webhookUrl
+              ? [
+                  {
+                    url: body.webhookUrl,
+                    events: ["message", "session.status"],
+                  },
+                ]
+              : undefined,
+          },
+        });
 
-      await prisma.channel.update({
-        where: { id: channel.id },
-        data: { status: newStatus },
-      });
+        // Atualiza status baseado na resposta do WAHA
+        const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
 
-      return reply.status(201).send({
-        channel: {
-          ...channel,
-          status: newStatus,
-        },
-        wahaSession: {
-          name: wahaSession.name,
-          status: wahaSession.status,
-        },
-      });
-    } catch (error) {
-      // Se falhar no WAHA, marca como FAILED mas mantém o canal
-      await prisma.channel.update({
-        where: { id: channel.id },
-        data: { status: ChannelStatus.FAILED },
-      });
+        await prisma.channel.update({
+          where: { id: channel.id },
+          data: { status: newStatus },
+        });
 
-      console.error("[Channels] Erro ao criar sessão WAHA:", error);
+        return reply.status(201).send({
+          channel: {
+            ...channel,
+            status: newStatus,
+          },
+          wahaSession: {
+            name: wahaSession.name,
+            status: wahaSession.status,
+          },
+        });
+      } catch (error) {
+        // Se falhar no WAHA, marca como FAILED mas mantém o canal
+        await prisma.channel.update({
+          where: { id: channel.id },
+          data: { status: ChannelStatus.FAILED },
+        });
 
-      return reply.status(500).send({
-        error: "Falha ao criar sessão no WAHA",
-        channel: {
-          ...channel,
-          status: ChannelStatus.FAILED,
-        },
-      });
-    }
-  });
+        console.error("[Channels] Erro ao criar sessão WAHA:", error);
+
+        return reply.status(500).send({
+          error: "Falha ao criar sessão no WAHA",
+          channel: {
+            ...channel,
+            status: ChannelStatus.FAILED,
+          },
+        });
+      }
+    },
+  );
 
   /**
    * GET /channels/:id/qr
@@ -173,7 +179,7 @@ export async function channelsRoutes(app: FastifyInstance) {
     try {
       const qr = await waha.getQRCode(
         channel.whatsappDetails.sessionName,
-        "image"
+        "image",
       );
 
       return reply.send({
@@ -208,134 +214,158 @@ export async function channelsRoutes(app: FastifyInstance) {
    * GET /channels/:id/status
    * Verifica o status atual do canal/sessão
    */
-  app.get("/:id/status", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const { id } = channelParamsSchema.parse(request.params);
+  app.get(
+    "/:id/status",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const { id } = channelParamsSchema.parse(request.params);
 
-    const channel = await prisma.channel.findUnique({
-      where: { id },
-      include: { whatsappDetails: true },
-    });
-
-    if (!channel) {
-      return reply.status(404).send({ error: "Canal não encontrado" });
-    }
-
-    // Valida que o canal pertence à operation do usuário
-    if (channel.operationId !== user.operationId) {
-      return reply.status(403).send({ error: "Acesso negado" });
-    }
-
-    if (channel.type !== ChannelType.WHATSAPP || !channel.whatsappDetails) {
-      return reply.send({
-        channelId: channel.id,
-        type: channel.type,
-        status: channel.status,
+      const channel = await prisma.channel.findUnique({
+        where: { id },
+        include: { whatsappDetails: true },
       });
-    }
 
-    try {
-      const wahaSession = await waha.getSession(
-        channel.whatsappDetails.sessionName
-      );
-      const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
+      if (!channel) {
+        return reply.status(404).send({ error: "Canal não encontrado" });
+      }
 
-      // Atualiza o status no banco se mudou
-      if (channel.status !== newStatus) {
-        await prisma.channel.update({
-          where: { id: channel.id },
-          data: {
-            status: newStatus,
-            // Salva o número do WhatsApp quando conectar
-            externalIdentifier:
-              wahaSession.me?.id?.split("@")[0] || channel.externalIdentifier,
-          },
+      // Valida que o canal pertence à operation do usuário
+      if (channel.operationId !== user.operationId) {
+        return reply.status(403).send({ error: "Acesso negado" });
+      }
+
+      if (channel.type !== ChannelType.WHATSAPP || !channel.whatsappDetails) {
+        return reply.send({
+          channelId: channel.id,
+          type: channel.type,
+          status: channel.status,
         });
       }
 
-      return reply.send({
-        channelId: channel.id,
-        type: channel.type,
-        status: newStatus,
-        wahaStatus: wahaSession.status,
-        phoneNumber: wahaSession.me?.id?.split("@")[0],
-        pushName: wahaSession.me?.pushName,
-      });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Erro desconhecido";
+      try {
+        const wahaSession = await waha.getSession(
+          channel.whatsappDetails.sessionName,
+        );
+        const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
+        const phoneNumber = wahaSession.me?.id?.split("@")[0];
 
-      return reply.send({
-        channelId: channel.id,
-        type: channel.type,
-        status: channel.status,
-        error: errorMessage,
-      });
-    }
-  });
+        // Atualiza o status no banco se mudou
+        if (channel.status !== newStatus || phoneNumber) {
+          try {
+            await prisma.channel.update({
+              where: { id: channel.id },
+              data: {
+                status: newStatus,
+                // Salva o número do WhatsApp quando conectar
+                externalIdentifier: phoneNumber || channel.externalIdentifier,
+              },
+            });
+          } catch (updateError) {
+            // Se falhar por constraint única, o mesmo número já está em outro channel
+            if (
+              updateError instanceof Error &&
+              updateError.message.includes("externalIdentifier")
+            ) {
+              console.warn(
+                `[Channels] Número ${phoneNumber} já está em uso por outro channel`,
+              );
+            } else {
+              throw updateError;
+            }
+          }
+        }
+
+        return reply.send({
+          channelId: channel.id,
+          type: channel.type,
+          status: newStatus,
+          wahaStatus: wahaSession.status,
+          phoneNumber,
+          pushName: wahaSession.me?.pushName,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Erro desconhecido";
+
+        return reply.send({
+          channelId: channel.id,
+          type: channel.type,
+          status: channel.status,
+          error: errorMessage,
+        });
+      }
+    },
+  );
 
   /**
    * POST /channels/:id/reconnect
    * Tenta reconectar uma sessão que falhou
    */
-  app.post("/:id/reconnect", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const { id } = channelParamsSchema.parse(request.params);
+  app.post(
+    "/:id/reconnect",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const { id } = channelParamsSchema.parse(request.params);
 
-    const channel = await prisma.channel.findUnique({
-      where: { id },
-      include: { whatsappDetails: true },
-    });
+      const channel = await prisma.channel.findUnique({
+        where: { id },
+        include: { whatsappDetails: true },
+      });
 
-    if (!channel) {
-      return reply.status(404).send({ error: "Canal não encontrado" });
-    }
-
-    // Valida que o canal pertence à operation do usuário
-    if (channel.operationId !== user.operationId) {
-      return reply.status(403).send({ error: "Acesso negado" });
-    }
-
-    if (channel.type !== ChannelType.WHATSAPP || !channel.whatsappDetails) {
-      return reply.status(400).send({ error: "Canal não é do tipo WhatsApp" });
-    }
-
-    try {
-      // Tenta parar e iniciar a sessão
-      try {
-        await waha.stopSession(channel.whatsappDetails.sessionName);
-      } catch {
-        // Ignora erro se já estiver parada
+      if (!channel) {
+        return reply.status(404).send({ error: "Canal não encontrado" });
       }
 
-      const wahaSession = await waha.startSession(
-        channel.whatsappDetails.sessionName
-      );
-      const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
+      // Valida que o canal pertence à operation do usuário
+      if (channel.operationId !== user.operationId) {
+        return reply.status(403).send({ error: "Acesso negado" });
+      }
 
-      await prisma.channel.update({
-        where: { id: channel.id },
-        data: { status: newStatus },
-      });
+      if (channel.type !== ChannelType.WHATSAPP || !channel.whatsappDetails) {
+        return reply
+          .status(400)
+          .send({ error: "Canal não é do tipo WhatsApp" });
+      }
 
-      return reply.send({
-        channelId: channel.id,
-        status: newStatus,
-        wahaStatus: wahaSession.status,
-      });
-    } catch (error) {
-      console.error("[Channels] Erro ao reconectar:", error);
+      try {
+        // Tenta parar e iniciar a sessão
+        try {
+          await waha.stopSession(channel.whatsappDetails.sessionName);
+        } catch {
+          // Ignora erro se já estiver parada
+        }
 
-      await prisma.channel.update({
-        where: { id: channel.id },
-        data: { status: ChannelStatus.FAILED },
-      });
+        const wahaSession = await waha.startSession(
+          channel.whatsappDetails.sessionName,
+        );
+        const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
 
-      return reply.status(500).send({
-        error: "Falha ao reconectar",
-      });
-    }
-  });
+        await prisma.channel.update({
+          where: { id: channel.id },
+          data: { status: newStatus },
+        });
+
+        return reply.send({
+          channelId: channel.id,
+          status: newStatus,
+          wahaStatus: wahaSession.status,
+        });
+      } catch (error) {
+        console.error("[Channels] Erro ao reconectar:", error);
+
+        await prisma.channel.update({
+          where: { id: channel.id },
+          data: { status: ChannelStatus.FAILED },
+        });
+
+        return reply.status(500).send({
+          error: "Falha ao reconectar",
+        });
+      }
+    },
+  );
 
   /**
    * DELETE /channels/:id
@@ -411,6 +441,135 @@ export async function channelsRoutes(app: FastifyInstance) {
 
     return reply.send({ channels });
   });
+
+  /**
+   * GET /channels/:id/chats
+   * Lista os chats disponíveis do WhatsApp (WAHA) para vincular a contatos
+   */
+  app.get(
+    "/:id/chats",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const { id } = channelParamsSchema.parse(request.params);
+
+      const querySchema = z.object({
+        search: z.string().optional(),
+        limit: z.coerce.number().min(1).max(200).optional().default(50),
+        offset: z.coerce.number().min(0).optional().default(0),
+      });
+      const query = querySchema.parse(request.query);
+
+      const channel = await prisma.channel.findUnique({
+        where: { id },
+        include: { whatsappDetails: true },
+      });
+
+      if (!channel) {
+        return reply.status(404).send({ error: "Canal não encontrado" });
+      }
+
+      if (channel.operationId !== user.operationId) {
+        return reply.status(403).send({ error: "Acesso negado" });
+      }
+
+      if (!channel.whatsappDetails?.sessionName) {
+        return reply
+          .status(400)
+          .send({ error: "Canal sem sessão WhatsApp configurada" });
+      }
+
+      try {
+        // Busca chats do WAHA com paginação
+        const wahaChats = await waha.getChatsOverview({
+          sessionName: channel.whatsappDetails.sessionName,
+          limit: query.limit,
+          offset: query.offset,
+        });
+
+        // Filtra por grupos (termina com @g.us) - só retorna contatos diretos
+        let chats = wahaChats.filter((chat) => chat.id.endsWith("@c.us"));
+
+        // Busca quais chats já estão vinculados a contatos (pelo número do WhatsApp)
+        const waIds = chats.map((c) => c.id.replace("@c.us", ""));
+        const existingIdentities = await prisma.identity.findMany({
+          where: {
+            type: "WHATSAPP",
+            value: { in: waIds },
+          },
+          include: {
+            contact: {
+              include: {
+                company: { select: { id: true, name: true, alias: true } },
+              },
+            },
+          },
+        });
+
+        const identityMap = new Map(
+          existingIdentities.map((i) => [i.value, i]),
+        );
+
+        // Monta resposta com info de vínculo
+        const result = chats.map((chat) => {
+          const waId = chat.id.replace("@c.us", "");
+          const identity = identityMap.get(waId);
+
+          return {
+            waId,
+            chatId: chat.id,
+            name: chat.name,
+            picture: chat.picture,
+            lastMessage: chat.lastMessage
+              ? {
+                  body: chat.lastMessage.body,
+                  timestamp: chat.lastMessage.timestamp,
+                  fromMe: chat.lastMessage.fromMe,
+                }
+              : null,
+            linked: !!identity,
+            contact: identity
+              ? {
+                  id: identity.contact.id,
+                  name: identity.contact.name,
+                  company: identity.contact.company,
+                }
+              : null,
+          };
+        });
+
+        // Filtra por busca se fornecido
+        let filtered = result;
+        if (query.search) {
+          const searchLower = query.search.toLowerCase();
+          filtered = result.filter(
+            (chat) =>
+              chat.name?.toLowerCase().includes(searchLower) ||
+              chat.waId.includes(query.search!),
+          );
+        }
+
+        // Indica se tem mais páginas (se retornou o limite, provavelmente tem mais)
+        const hasMore = wahaChats.length >= query.limit;
+
+        return reply.send({ 
+          chats: filtered,
+          pagination: {
+            offset: query.offset,
+            limit: query.limit,
+            hasMore,
+            totalFetched: wahaChats.length,
+          }
+        });
+      } catch (error) {
+        console.error("[Channels] Erro ao buscar chats:", error);
+        return reply.status(500).send({
+          error: "Erro ao buscar chats do WhatsApp",
+          details: error instanceof Error ? error.message : "Erro desconhecido",
+        });
+      }
+    },
+  );
 }
 
 // ============================================================================
@@ -418,7 +577,7 @@ export async function channelsRoutes(app: FastifyInstance) {
 // ============================================================================
 
 function mapWahaStatusToChannelStatus(
-  wahaStatus: waha.WAHASessionStatus
+  wahaStatus: waha.WAHASessionStatus,
 ): ChannelStatus {
   switch (wahaStatus) {
     case "WORKING":

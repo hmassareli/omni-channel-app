@@ -15,6 +15,7 @@ const contactParamsSchema = z.object({
 const contactQuerySchema = z.object({
   operationId: z.string().optional(),
   search: z.string().optional(),
+  unlinked: z.coerce.boolean().optional(), // Contatos sem empresa vinculada
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -26,6 +27,16 @@ const updateContactSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+const createContactSchema = z.object({
+  name: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email().optional(),
+  companyId: z.uuid("companyId inválido").optional(),
+  role: z.string().optional(),
+}).refine(data => data.phone || data.email, {
+  message: "É necessário informar pelo menos um telefone ou email",
+});
+
 const addTagSchema = z.object({
   tagId: z.uuid("tagId inválido"),
   source: z.enum(TagSource).default(TagSource.USER),
@@ -34,6 +45,14 @@ const addTagSchema = z.object({
 
 const removeTagSchema = z.object({
   tagId: z.string().uuid("tagId inválido"),
+});
+
+const linkWhatsAppChatSchema = z.object({
+  waId: z.string().min(10, "Número inválido"), // Ex: "5511999999999"
+  companyId: z.uuid("companyId inválido"),
+  name: z.string().optional(),
+  role: z.string().optional(),
+  channelId: z.uuid("channelId inválido"), // Para criar a conversation
 });
 
 // ============================================================================
@@ -51,14 +70,18 @@ export async function contactsRoutes(app: FastifyInstance) {
 
     const where: Prisma.ContactWhereInput = {};
 
-    if (query.operationId) {
-      where.conversations = {
-        some: {
-          channel: {
-            operationId: query.operationId,
-          },
+    // Filtrar por operação do usuário (contatos com conversas nessa operation)
+    where.conversations = {
+      some: {
+        channel: {
+          operationId: user.operationId,
         },
-      };
+      },
+    };
+
+    // Filtrar contatos sem empresa vinculada
+    if (query.unlinked) {
+      where.companyId = null;
     }
 
     if (query.search) {
@@ -94,6 +117,214 @@ export async function contactsRoutes(app: FastifyInstance) {
         offset: query.offset,
         hasMore: query.offset + contacts.length < total,
       },
+    });
+  });
+
+  app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const body = createContactSchema.parse(request.body);
+
+    // Verificar se já existe contato com mesmo telefone/email
+    const identityConditions = [];
+    if (body.phone) {
+      identityConditions.push({ type: "WHATSAPP", value: body.phone });
+    }
+    if (body.email) {
+      identityConditions.push({ type: "EMAIL", value: body.email });
+    }
+
+    const existingContact = await prisma.contact.findFirst({
+      where: {
+        identities: {
+          some: {
+            OR: identityConditions.map(c => ({ type: c.type as "WHATSAPP" | "EMAIL", value: c.value })),
+          },
+        },
+      },
+    });
+
+    if (existingContact) {
+      return reply.status(409).send({ 
+        error: "Já existe um contato com este telefone ou email",
+        contact: existingContact,
+      });
+    }
+
+    // Criar contato com identidades
+    const contact = await prisma.contact.create({
+      data: {
+        name: body.name,
+        role: body.role,
+        companyId: body.companyId,
+        identities: {
+          create: [
+            ...(body.phone ? [{ type: "WHATSAPP" as const, value: body.phone }] : []),
+            ...(body.email ? [{ type: "EMAIL" as const, value: body.email }] : []),
+          ],
+        },
+      },
+      include: {
+        identities: true,
+        company: true,
+      },
+    });
+
+    return reply.status(201).send({ contact });
+  });
+
+  // Vincular contato a uma empresa
+  app.patch("/:id/link-company", { preHandler: authMiddleware }, async (request, reply) => {
+    const { id } = contactParamsSchema.parse(request.params);
+    const { companyId } = z.object({ companyId: z.uuid() }).parse(request.body);
+
+    const contact = await prisma.contact.findUnique({ where: { id } });
+    if (!contact) {
+      return reply.status(404).send({ error: "Contato não encontrado" });
+    }
+
+    const company = await prisma.company.findUnique({ where: { id: companyId } });
+    if (!company) {
+      return reply.status(404).send({ error: "Empresa não encontrada" });
+    }
+
+    const updatedContact = await prisma.contact.update({
+      where: { id },
+      data: { companyId },
+      include: {
+        identities: true,
+        company: true,
+      },
+    });
+
+    return reply.send({ contact: updatedContact });
+  });
+
+  /**
+   * POST /contacts/link-whatsapp
+   * Vincula um chat do WhatsApp a uma empresa, criando:
+   * - Contact (ou usa existente se já houver)
+   * - Identity (WHATSAPP)
+   * - Conversation (vinculando ao Channel)
+   * - Vinculo com Company
+   */
+  app.post("/link-whatsapp", { preHandler: authMiddleware }, async (request, reply) => {
+    const body = linkWhatsAppChatSchema.parse(request.body);
+
+    // Verifica se a empresa existe
+    const company = await prisma.company.findUnique({ where: { id: body.companyId } });
+    if (!company) {
+      return reply.status(404).send({ error: "Empresa não encontrada" });
+    }
+
+    // Verifica se o channel existe
+    const channel = await prisma.channel.findUnique({ 
+      where: { id: body.channelId },
+      include: { whatsappDetails: true },
+    });
+    if (!channel) {
+      return reply.status(404).send({ error: "Canal não encontrado" });
+    }
+
+    // Verifica se já existe uma Identity com esse número
+    let identity = await prisma.identity.findUnique({
+      where: {
+        type_value: {
+          type: "WHATSAPP",
+          value: body.waId,
+        },
+      },
+      include: { 
+        contact: {
+          include: { company: true },
+        },
+      },
+    });
+
+    if (identity) {
+      // Contato já existe - apenas atualiza a empresa se não tiver
+      if (identity.contact.companyId && identity.contact.companyId !== body.companyId) {
+        return reply.status(409).send({ 
+          error: "Este contato já está vinculado a outra empresa",
+          contact: identity.contact,
+        });
+      }
+
+      // Atualiza o contato com a empresa e nome se fornecido
+      const updatedContact = await prisma.contact.update({
+        where: { id: identity.contactId },
+        data: {
+          companyId: body.companyId,
+          name: body.name || identity.contact.name,
+          role: body.role || identity.contact.role,
+        },
+        include: {
+          identities: true,
+          company: true,
+          conversations: true,
+        },
+      });
+
+      // Verifica se já existe conversation com esse channel
+      let conversation = await prisma.conversation.findFirst({
+        where: {
+          contactId: updatedContact.id,
+          channelId: body.channelId,
+        },
+      });
+
+      if (!conversation) {
+        // Cria a conversation
+        conversation = await prisma.conversation.create({
+          data: {
+            contactId: updatedContact.id,
+            channelId: body.channelId,
+            externalId: `${body.waId}@c.us`,
+            firstMessageAt: new Date(),
+            lastMessageAt: new Date(),
+            needsAnalysis: false,
+          },
+        });
+      }
+
+      return reply.send({ 
+        contact: updatedContact,
+        conversation,
+        created: false,
+      });
+    }
+
+    // Cria novo Contact + Identity + Conversation
+    const contact = await prisma.contact.create({
+      data: {
+        name: body.name,
+        role: body.role,
+        companyId: body.companyId,
+        identities: {
+          create: {
+            type: "WHATSAPP",
+            value: body.waId,
+          },
+        },
+        conversations: {
+          create: {
+            channelId: body.channelId,
+            externalId: `${body.waId}@c.us`,
+            firstMessageAt: new Date(),
+            lastMessageAt: new Date(),
+            needsAnalysis: false,
+          },
+        },
+      },
+      include: {
+        identities: true,
+        company: true,
+        conversations: true,
+      },
+    });
+
+    return reply.status(201).send({ 
+      contact,
+      conversation: contact.conversations[0],
+      created: true,
     });
   });
 

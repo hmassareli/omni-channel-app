@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-react";
+import { Building2, LogOut, Target, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AuthCallback } from "./components/AuthCallback";
 import { LoginPage } from "./components/LoginPage";
@@ -16,9 +16,10 @@ interface TopHeaderProps {
   userName?: string;
   userEmail?: string;
   onSignOut: () => void;
+  currentRoute?: string;
 }
 
-const TopHeader = ({ userName, userEmail, onSignOut }: TopHeaderProps) => {
+const TopHeader = ({ userName, userEmail, onSignOut, currentRoute }: TopHeaderProps) => {
   const initials = userName
     ? userName
         .split(" ")
@@ -28,12 +29,38 @@ const TopHeader = ({ userName, userEmail, onSignOut }: TopHeaderProps) => {
         .slice(0, 2)
     : userEmail?.slice(0, 2).toUpperCase() || "??";
 
+  const navItems = [
+    { href: "/", label: "Início", icon: Users, route: "home" },
+    { href: "/companies", label: "Empresas", icon: Building2, route: "companies" },
+    { href: "/opportunities", label: "Oportunidades", icon: Target, route: "opportunities" },
+  ];
+
   return (
     <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200">
-      <div className="flex items-center">
-        <div className="bg-purple-600 p-2 rounded text-white font-bold">
+      <div className="flex items-center gap-8">
+        <a href="/" className="bg-purple-600 p-2 rounded text-white font-bold">
           <span className="text-xl">CRM</span>
-        </div>
+        </a>
+        <nav className="flex items-center gap-1">
+          {navItems.map((item) => {
+            const isActive = currentRoute === item.route || 
+              (item.route === "companies" && currentRoute === "company");
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-purple-100 text-purple-700"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                }`}
+              >
+                <item.icon className="w-4 h-4" />
+                {item.label}
+              </a>
+            );
+          })}
+        </nav>
       </div>
 
       <div className="flex items-center gap-3">
@@ -245,6 +272,7 @@ function Dashboard() {
         userName={userName}
         userEmail={userEmail}
         onSignOut={signOut}
+        currentRoute={route}
       />
       {renderPage()}
     </div>

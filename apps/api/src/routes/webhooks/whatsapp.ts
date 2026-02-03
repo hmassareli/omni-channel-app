@@ -7,6 +7,7 @@ import {
   whatsappWebhookSchema,
   type IngestResult,
 } from "../../services/whatsapp-ingest";
+import { syncWhatsAppChats } from "../../services/whatsapp-sync";
 
 const webhookResponseSchema = z.object({
   conversationId: z.string().optional(),
@@ -129,6 +130,20 @@ async function handleSessionStatusWebhook(
   console.log(
     `[Webhook] Canal ${whatsappChannel.channel.name} atualizado: ${payload.status} -> ${newStatus}`
   );
+
+  // Se acabou de conectar (WORKING), dispara sync dos chats
+  if (payload.status === "WORKING") {
+    console.log(`[Webhook] Sessão ${session} conectada - iniciando sync de chats...`);
+    
+    // Executa sync em background para não bloquear o webhook
+    syncWhatsAppChats(whatsappChannel.channelId, session)
+      .then((result) => {
+        console.log(`[Webhook] Sync concluído: ${result.totalChats} chats, ${result.newConversations} novos`);
+      })
+      .catch((error) => {
+        console.error(`[Webhook] Erro no sync:`, error);
+      });
+  }
 }
 
 function mapWahaStatusToChannelStatus(
