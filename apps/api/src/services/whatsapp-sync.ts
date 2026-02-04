@@ -74,7 +74,7 @@ export async function syncWhatsAppChats(
     // Processa cada chat
     for (const chat of directChats) {
       try {
-        await syncSingleChat(chat, channel.id, channel.operationId);
+        await syncSingleChat(chat, channel.id);
         
         // Verifica se criou novo
         const waId = chat.id.replace("@c.us", "");
@@ -110,8 +110,7 @@ export async function syncWhatsAppChats(
  */
 async function syncSingleChat(
   chat: waha.WAHAChatOverview,
-  channelId: string,
-  operationId: string
+  channelId: string
 ): Promise<void> {
   const waId = chat.id.replace("@c.us", "");
   const chatId = chat.id;
@@ -135,7 +134,6 @@ async function syncSingleChat(
     contact = await prisma.contact.create({
       data: {
         name: chat.name || null,
-        operationId,
         identities: {
           create: {
             type: IdentityType.WHATSAPP,
