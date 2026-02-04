@@ -22,9 +22,11 @@ export interface SyncResult {
  */
 export async function syncWhatsAppChats(
   channelId: string,
-  sessionName: string
+  sessionName: string,
 ): Promise<SyncResult> {
-  console.log(`[Sync] Iniciando sync do canal ${channelId} (sessão: ${sessionName})`);
+  console.log(
+    `[Sync] Iniciando sync do canal ${channelId} (sessão: ${sessionName})`,
+  );
 
   const result: SyncResult = {
     channelId,
@@ -69,26 +71,30 @@ export async function syncWhatsAppChats(
     const directChats = allChats.filter((chat) => chat.id.endsWith("@c.us"));
     result.totalChats = directChats.length;
 
-    console.log(`[Sync] ${directChats.length} contatos diretos para sincronizar`);
+    console.log(
+      `[Sync] ${directChats.length} contatos diretos para sincronizar`,
+    );
 
     // Processa cada chat
     for (const chat of directChats) {
       try {
-        await syncSingleChat(chat, channel.id, channel.operationId);
-        
+        await syncSingleChat(chat, channel.id);
+
         // Verifica se criou novo
         const waId = chat.id.replace("@c.us", "");
         const identity = await prisma.identity.findFirst({
           where: { type: IdentityType.WHATSAPP, value: waId },
         });
-        
+
         // Conta como novo se foi criado agora (verificar pela conversation)
         const conversation = await prisma.conversation.findFirst({
           where: { channelId: channel.id, externalId: chat.id },
         });
-        
-        if (conversation?.createdAt && 
-            new Date().getTime() - conversation.createdAt.getTime() < 5000) {
+
+        if (
+          conversation?.createdAt &&
+          new Date().getTime() - conversation.createdAt.getTime() < 5000
+        ) {
           result.newConversations++;
         }
       } catch (error) {
@@ -97,7 +103,9 @@ export async function syncWhatsAppChats(
       }
     }
 
-    console.log(`[Sync] Concluído: ${result.newConversations} novos, ${result.errors} erros`);
+    console.log(
+      `[Sync] Concluído: ${result.newConversations} novos, ${result.errors} erros`,
+    );
     return result;
   } catch (error) {
     console.error(`[Sync] Erro fatal no sync:`, error);
@@ -111,7 +119,6 @@ export async function syncWhatsAppChats(
 async function syncSingleChat(
   chat: waha.WAHAChatOverview,
   channelId: string,
-  operationId: string
 ): Promise<void> {
   const waId = chat.id.replace("@c.us", "");
   const chatId = chat.id;
@@ -135,7 +142,6 @@ async function syncSingleChat(
     contact = await prisma.contact.create({
       data: {
         name: chat.name || null,
-        operationId,
         identities: {
           create: {
             type: IdentityType.WHATSAPP,
@@ -172,8 +178,12 @@ async function syncSingleChat(
         firstMessageAt: lastMessageAt,
         // Se temos a última mensagem, registramos alguns dados
         ...(chat.lastMessage && {
-          firstInboundMessageAt: !chat.lastMessage.fromMe ? lastMessageAt : null,
-          firstOutboundMessageAt: chat.lastMessage.fromMe ? lastMessageAt : null,
+          firstInboundMessageAt: !chat.lastMessage.fromMe
+            ? lastMessageAt
+            : null,
+          firstOutboundMessageAt: chat.lastMessage.fromMe
+            ? lastMessageAt
+            : null,
           isStartedByContact: !chat.lastMessage.fromMe,
         }),
       },
