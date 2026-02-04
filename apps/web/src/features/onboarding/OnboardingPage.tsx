@@ -123,7 +123,17 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
           );
 
           if (hasConnectedVendedor) {
-            goToStep(4, "finish");
+            // Se já tem vendedor conectado, marca onboarding como completo e finaliza
+            try {
+              await api.updateOperation(operation.id, {
+                onboardingCompleted: true,
+              });
+              onComplete();
+              return;
+            } catch (err) {
+              console.error("Erro ao marcar onboarding como concluído:", err);
+              goToStep(4, "finish");
+            }
           } else {
             goToStep(2, "vendedores");
           }

@@ -1,11 +1,14 @@
-import { LogOut } from "lucide-react";
+import { Building2, LogOut, Target, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AuthCallback } from "./components/AuthCallback";
 import { LoginPage } from "./components/LoginPage";
 import { OnboardingPage } from "./features/onboarding";
 import { useAuth } from "./hooks/useAuth";
 import * as api from "./lib/api";
+import { CompaniesPage } from "./pages/CompaniesPage";
+import { CompanyTimeline } from "./pages/CompanyTimeline";
 import { ContactTimeline } from "./pages/ContactTimeline";
+import { OpportunitiesPage } from "./pages/OpportunitiesPage";
 
 // --- Componentes de Layout ---
 
@@ -13,9 +16,10 @@ interface TopHeaderProps {
   userName?: string;
   userEmail?: string;
   onSignOut: () => void;
+  currentRoute?: string;
 }
 
-const TopHeader = ({ userName, userEmail, onSignOut }: TopHeaderProps) => {
+const TopHeader = ({ userName, userEmail, onSignOut, currentRoute }: TopHeaderProps) => {
   const initials = userName
     ? userName
         .split(" ")
@@ -25,12 +29,38 @@ const TopHeader = ({ userName, userEmail, onSignOut }: TopHeaderProps) => {
         .slice(0, 2)
     : userEmail?.slice(0, 2).toUpperCase() || "??";
 
+  const navItems = [
+    { href: "/", label: "Início", icon: Users, route: "home" },
+    { href: "/companies", label: "Empresas", icon: Building2, route: "companies" },
+    { href: "/opportunities", label: "Oportunidades", icon: Target, route: "opportunities" },
+  ];
+
   return (
     <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200">
-      <div className="flex items-center">
-        <div className="bg-purple-600 p-2 rounded text-white font-bold">
+      <div className="flex items-center gap-8">
+        <a href="/" className="bg-purple-600 p-2 rounded text-white font-bold">
           <span className="text-xl">CRM</span>
-        </div>
+        </a>
+        <nav className="flex items-center gap-1">
+          {navItems.map((item) => {
+            const isActive = currentRoute === item.route || 
+              (item.route === "companies" && currentRoute === "company");
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-purple-100 text-purple-700"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                }`}
+              >
+                <item.icon className="w-4 h-4" />
+                {item.label}
+              </a>
+            );
+          })}
+        </nav>
       </div>
 
       <div className="flex items-center gap-3">
@@ -90,7 +120,14 @@ const LoadingScreen = () => (
 );
 
 // --- Roteamento Simples ---
-function getRoute(): "callback" | "contact" | "onboarding" | "home" {
+function getRoute():
+  | "callback"
+  | "contact"
+  | "companies"
+  | "company"
+  | "opportunities"
+  | "onboarding"
+  | "home" {
   const path = window.location.pathname;
   if (path.startsWith("/auth/callback")) {
     return "callback";
@@ -100,6 +137,15 @@ function getRoute(): "callback" | "contact" | "onboarding" | "home" {
   }
   if (path.startsWith("/contact")) {
     return "contact";
+  }
+  if (path.startsWith("/companies/")) {
+    return "company";
+  }
+  if (path.startsWith("/companies")) {
+    return "companies";
+  }
+  if (path.startsWith("/opportunities")) {
+    return "opportunities";
   }
   return "home";
 }
@@ -191,6 +237,12 @@ function Dashboard() {
     switch (route) {
       case "contact":
         return <ContactTimeline userName={userName} />;
+      case "companies":
+        return <CompaniesPage />;
+      case "company":
+        return <CompanyTimeline />;
+      case "opportunities":
+        return <OpportunitiesPage />;
       default:
         // Home: Lista de contatos (placeholder por enquanto)
         return (
@@ -220,6 +272,7 @@ function Dashboard() {
         userName={userName}
         userEmail={userEmail}
         onSignOut={signOut}
+        currentRoute={route}
       />
       {renderPage()}
     </div>

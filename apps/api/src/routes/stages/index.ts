@@ -77,7 +77,7 @@ export async function stagesRoutes(app: FastifyInstance) {
       },
       include: {
         operation: { select: { id: true, name: true } },
-        _count: { select: { contacts: true } },
+        _count: { select: { opportunities: true } },
       },
       orderBy: { order: "asc" },
     });
@@ -96,7 +96,7 @@ export async function stagesRoutes(app: FastifyInstance) {
       where: { id },
       include: {
         operation: { select: { id: true, name: true } },
-        _count: { select: { contacts: true } },
+        _count: { select: { opportunities: true } },
       },
     });
 
@@ -228,14 +228,14 @@ export async function stagesRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Stage não encontrado" });
     }
 
-    // Verifica se tem contatos neste stage
-    const contactsCount = await prisma.contact.count({
+    // Verifica se tem oportunidades neste stage
+    const opportunitiesCount = await prisma.opportunity.count({
       where: { stageId: id },
     });
-    if (contactsCount > 0) {
+    if (opportunitiesCount > 0) {
       return reply.status(409).send({
-        error: "Stage possui contatos vinculados",
-        contactsCount,
+        error: "Stage possui oportunidades vinculadas",
+        opportunitiesCount,
       });
     }
 

@@ -309,6 +309,61 @@ export async function configureWebhooks(
 // Messaging (básico - expandir conforme necessário)
 // ============================================================================
 
+export interface WAHAChatOverview {
+  id: string; // formato: 5511999999999@c.us
+  name: string | null;
+  picture: string | null;
+  lastMessage?: {
+    id: string;
+    timestamp: number;
+    from: string;
+    fromMe: boolean;
+    body: string;
+  };
+}
+
+export interface GetChatsOptions {
+  sessionName: string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Lista os chats de uma sessão (overview)
+ * Retorna id, name, picture, lastMessage
+ */
+export async function getChatsOverview(
+  options: GetChatsOptions
+): Promise<WAHAChatOverview[]> {
+  const { sessionName, limit, offset } = options;
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set("limit", String(limit));
+  if (offset !== undefined) params.set("offset", String(offset));
+  const query = params.toString();
+
+  return wahaRequest<WAHAChatOverview[]>(
+    "GET",
+    query
+      ? `/api/${sessionName}/chats/overview?${query}`
+      : `/api/${sessionName}/chats/overview`
+  );
+}
+
+/**
+ * Busca mensagens de um chat específico
+ */
+export async function getChatMessages(
+  sessionName: string,
+  chatId: string,
+  limit: number = 100
+): Promise<unknown[]> {
+  const encodedChatId = encodeURIComponent(chatId);
+  return wahaRequest<unknown[]>(
+    "GET",
+    `/api/${sessionName}/chats/${encodedChatId}/messages?limit=${limit}&downloadMedia=false`
+  );
+}
+
 export interface SendMessageOptions {
   chatId: string; // formato: 5511999999999@c.us
   text: string;

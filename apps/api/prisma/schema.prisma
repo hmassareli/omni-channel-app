@@ -15,12 +15,10 @@ model Contact {
   id        String   @id @default(uuid())
   name      String?
   avatarUrl String?
+  role      String?
+  relevance Relevance?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // CRM / Funil
-  stageId String?
-  stage   Stage?  @relation(fields: [stageId], references: [id])
 
   // Relacionamento com empresa (CNPJ)
   companyId String?
@@ -40,19 +38,19 @@ model Contact {
 // Dados de empresa (CNPJ) - baseado na API CNPJA
 model Company {
   id        String   @id @default(uuid())
-  
+
   // Identificação
   taxId           String   @unique // CNPJ (ex: 37335118000180)
   name            String   // Razão Social (company.name)
   alias           String?  // Nome Fantasia
-  
+
   // Status e datas
   status          String?  // Situação cadastral (ex: "Ativa", "Baixada")
   statusId        Int?     // ID do status
   statusDate      DateTime? // Data da situação cadastral
   founded         DateTime? // Data de abertura
   head            Boolean  @default(true) // Se é matriz
-  
+
   // Porte e natureza
   equity          Decimal? // Capital social
   sizeId          Int?     // ID do porte
@@ -60,12 +58,12 @@ model Company {
   sizeText        String?  // Microempresa, etc.
   natureId        Int?     // ID natureza jurídica
   natureText      String?  // Sociedade Empresária Limitada, etc.
-  
+
   // CNAE - Atividade econômica
   mainActivityId   Int?    // CNAE principal ID
   mainActivityText String? // Descrição CNAE principal
   sideActivities   Json?   // Array de CNAEs secundários [{id, text}]
-  
+
   // Endereço
   addressStreet       String?
   addressNumber       String?
@@ -77,23 +75,25 @@ model Company {
   addressMunicipality Int?    // Código IBGE
   addressCountryId    Int?
   addressCountryName  String?
-  
+
   // Contatos
   phones Json? // Array [{type, area, number}]
   emails Json? // Array [{ownership, address, domain}]
-  
+
   // Sócios/Membros
   members Json? // Array [{since, role: {id, text}, person: {id, name, type, taxId, age}}]
-  
+
   // Controle interno
   sourceApi       String?  @default("CNPJA") // Fonte dos dados
   apiUpdatedAt    DateTime? // updated da API
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  
+
   // Relacionamentos
-  contacts Contact[]
-  
+  contacts    Contact[]
+  opportunities Opportunity[]
+  wealthSigns Json?
+
   @@map("companies")
 }
 
@@ -111,6 +111,30 @@ model Identity {
 
   @@unique([type, value]) // Não pode ter o mesmo número cadastrado 2x como identidade
   @@map("identities")
+}
+
+enum Relevance {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// Oportunidades de venda
+model Opportunity {
+  id              String   @id @default(uuid())
+  companyId       String
+  stageId         String
+  agentId         String?
+  estimatedValue  Decimal?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stage           Stage?   @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  agent           Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  
+  @@map("opportunities")
 }
 
 enum IdentityType {
@@ -137,7 +161,7 @@ model Stage {
   updatedAt       DateTime @updatedAt
 
   operation Operation? @relation(fields: [operationId], references: [id], onDelete: SetNull)
-  contacts  Contact[]
+  opportunities Opportunity[]
 
   @@unique([operationId, slug])
   @@map("omni_stages")
@@ -298,6 +322,7 @@ model Agent {
   user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
   channels  Channel[]
+  opportunities Opportunity[]
 
   @@map("omni_agents")
 }

@@ -1,17 +1,11 @@
-import type { InsightDefinition, Message, Stage, Tag } from "@prisma/client";
 import { EventType, MessageDirection, Prisma, TagSource } from "@prisma/client";
-import type { Response } from "undici";
-import { fetch } from "undici";
 import { prisma } from "../prisma";
 
-const pendingConversations = new Set<string>();
-const runningConversations = new Set<string>();
-const analysisConcurrency = Math.max(
-  1,
-  Number(process.env.CONVERSATION_ANALYSIS_CONCURRENCY ?? 1)
-);
+const pendingConversations = new Set();
+const runningConversations = new Set();
+const analysisConcurrency = Math.max(1, Number(process.env.CONVERSATION_ANALYSIS_CONCURRENCY ?? 1));
 
-export function scheduleConversationAnalysis(conversationId: string) {
+export function scheduleConversationAnalysis(conversationId) {
   if (runningConversations.has(conversationId)) {
     return;
   }
@@ -20,7 +14,7 @@ export function scheduleConversationAnalysis(conversationId: string) {
   queueMicrotask(drainAnalysisQueue);
 }
 
-async function drainAnalysisQueue(): Promise<void> {
+async function drainAnalysisQueue() {
   if (runningConversations.size >= analysisConcurrency) {
     return;
   }
@@ -47,7 +41,7 @@ async function drainAnalysisQueue(): Promise<void> {
   }
 }
 
-async function processConversation(conversationId: string): Promise<void> {
+async function processConversation(conversationId) {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: {
@@ -75,18 +69,21 @@ async function processConversation(conversationId: string): Promise<void> {
       },
       contact: {
         include: {
-          stage: {
-            select: {
-              id: true,
-              slug: true,
+          company: {
+            include: {
+              opportunities: {
+                include: {
+                  stage: { select: { id: true, slug: true, name: true, autoTransition: true } },
+                },
+                orderBy: { createdAt: "desc" },
+                take: 1,
+              },
             },
           },
           tags: {
             include: {
               tag: {
-                select: {
-                  slug: true,
-                },
+                select: { slug: true },
               },
             },
           },
@@ -99,9 +96,7 @@ async function processConversation(conversationId: string): Promise<void> {
     return;
   }
 
-  const hasPendingMessages = conversation.messages.some(
-    (message) => message.requiresProcessing
-  );
+  const hasPendingMessages = conversation.messages.some((m) => m.requiresProcessing);
 
   if (!hasPendingMessages && !conversation.needsAnalysis) {
     return;
@@ -118,15 +113,16 @@ async function processConversation(conversationId: string): Promise<void> {
   }
 
   const operation = conversation.channel.operation;
+  const opportunity = conversation.contact?.company?.opportunities?.[0];
 
   const tagDefinitions = operation?.tags ?? [];
   const insightDefinitions = operation?.insightDefinitions ?? [];
   const stageDefinitions = operation?.stages ?? [];
-  const currentStageSlug = conversation.contact?.stage?.slug ?? undefined;
-  const currentTagSlugs =
-    conversation.contact?.tags
-      .map((entry) => entry.tag.slug)
-      .filter((slug): slug is string => Boolean(slug)) ?? [];
+  
+  const currentStageSlug = opportunity?.stage?.slug ?? undefined;
+  const currentTagSlugs = conversation.contact?.tags
+    ?.map((entry) => entry.tag.slug)
+    .filter(Boolean) ?? [];
 
   const runResult = await runGroqAnalysis({
     conversationSnippet,
@@ -137,12 +133,12 @@ async function processConversation(conversationId: string): Promise<void> {
       description: tag.description ?? undefined,
       promptCondition: tag.promptCondition ?? undefined,
     })),
-    insights: insightDefinitions.map((definition) => ({
-      slug: definition.slug,
-      name: definition.name,
-      description: definition.description ?? undefined,
-      promptInstruction: definition.promptInstruction ?? undefined,
-      schema: definition.schema ?? undefined,
+    insights: insightDefinitions.map((def) => ({
+      slug: def.slug,
+      name: def.name,
+      description: def.description ?? undefined,
+      promptInstruction: def.promptInstruction ?? undefined,
+      schema: def.schema ?? undefined,
     })),
     stages: stageDefinitions.map((stage) => ({
       slug: stage.slug,
@@ -159,14 +155,8 @@ async function processConversation(conversationId: string): Promise<void> {
   }
 
   const tagSelections = resolveTagSelections(runResult.tags, tagDefinitions);
-  const insightSelections = resolveInsightSelections(
-    runResult.insights,
-    insightDefinitions
-  );
-  const stageSuggestion = resolveStageSuggestion(
-    runResult.stage,
-    stageDefinitions
-  );
+  const insightSelections = resolveInsightSelections(runResult.insights, insightDefinitions);
+  const stageSuggestion = resolveStageSuggestion(runResult.stage, stageDefinitions);
 
   const now = new Date();
 
@@ -196,9 +186,7 @@ async function processConversation(conversationId: string): Promise<void> {
       await tx.contactInsight.deleteMany({
         where: {
           contactId: conversation.contactId,
-          definitionId: {
-            in: insightSelections.map((selection) => selection.definitionId),
-          },
+          definitionId: { in: insightSelections.map((s) => s.definitionId) },
         },
       });
 
@@ -207,10 +195,7 @@ async function processConversation(conversationId: string): Promise<void> {
           data: {
             contactId: conversation.contactId,
             definitionId: selection.definitionId,
-            payload:
-              selection.payload === null
-                ? undefined
-                : (selection.payload as Prisma.InputJsonValue),
+            payload: selection.payload === null ? undefined : selection.payload,
             confidence: selection.confidence,
             generatedAt: now,
             expiresAt: selection.expiresAt ?? null,
@@ -219,16 +204,16 @@ async function processConversation(conversationId: string): Promise<void> {
       }
     }
 
-    if (stageSuggestion) {
-      const previousStageId = conversation.contact?.stageId ?? null;
+    if (stageSuggestion && opportunity) {
+      const previousStageId = opportunity.stageId;
       const shouldTransition =
         stageSuggestion.definition.autoTransition &&
         stageSuggestion.confidence >= 0.6 &&
         previousStageId !== stageSuggestion.definition.id;
 
       if (shouldTransition) {
-        await tx.contact.update({
-          where: { id: conversation.contactId },
+        await tx.opportunity.update({
+          where: { id: opportunity.id },
           data: { stageId: stageSuggestion.definition.id },
         });
 
@@ -256,9 +241,7 @@ async function processConversation(conversationId: string): Promise<void> {
             contactId: conversation.contactId,
             conversationId: conversation.id,
             type: EventType.SYSTEM_LOG,
-            content: `Sugerido estágio ${
-              stageSuggestion.definition.name
-            } (confiança ${(stageSuggestion.confidence * 100).toFixed(0)}%).`,
+            content: `Sugerido estágio ${stageSuggestion.definition.name} (confiança ${(stageSuggestion.confidence * 100).toFixed(0)}%).`,
             metadata: {
               suggestedStageId: stageSuggestion.definition.id,
               confidence: stageSuggestion.confidence,
@@ -283,23 +266,16 @@ async function processConversation(conversationId: string): Promise<void> {
   });
 }
 
-function formatConversation(
-  messages: Array<
-    Pick<Message, "content" | "direction" | "hasMedia" | "sentAt">
-  >
-): string {
+function formatConversation(messages) {
   if (!messages.length) {
     return "";
   }
 
-  const conversationArray: string[] = [];
-  let currentSpeaker: MessageDirection | null = null;
+  const conversationArray = [];
+  let currentSpeaker = null;
 
   for (const message of messages) {
-    const speaker =
-      message.direction === MessageDirection.OUTBOUND
-        ? "[ATENDENTE]"
-        : "[CLIENTE]";
+    const speaker = message.direction === MessageDirection.OUTBOUND ? "[ATENDENTE]" : "[CLIENTE]";
 
     if (currentSpeaker !== message.direction) {
       conversationArray.push(`${speaker}:`);
@@ -307,23 +283,17 @@ function formatConversation(
     }
 
     const baseContent = message.content?.trim();
-    const finalContent = baseContent?.length
-      ? baseContent
-      : message.hasMedia
-      ? "<media>"
-      : "<sem texto>";
+    const finalContent = baseContent?.length ? baseContent : message.hasMedia ? "<media>" : "<sem texto>";
 
     conversationArray.push(finalContent.slice(0, 400));
   }
 
-  const truncated: string[] = [];
+  const truncated = [];
   let totalChars = 0;
 
   for (let index = conversationArray.length - 1; index >= 0; index -= 1) {
     const entry = conversationArray[index];
-    if (!entry) {
-      continue;
-    }
+    if (!entry) continue;
 
     if (totalChars + entry.length > 800) {
       break;
@@ -336,45 +306,7 @@ function formatConversation(
   return truncated.join("\n");
 }
 
-interface GroqRequestInput {
-  conversationSnippet: string;
-  conversationSummary?: string;
-  tags: Array<{
-    slug: string;
-    label: string;
-    description?: string;
-    promptCondition?: string;
-  }>;
-  insights: Array<{
-    slug: string;
-    name: string;
-    description?: string;
-    promptInstruction?: string;
-    schema?: unknown;
-  }>;
-  stages: Array<{
-    slug: string;
-    name: string;
-    promptCondition?: string;
-    autoTransition: boolean;
-  }>;
-  currentStageSlug?: string;
-  currentTags?: string[];
-}
-
-interface GroqResult {
-  summary?: string;
-  tags?: string[];
-  insights?: Record<string, unknown> | null;
-  stage?: {
-    slug?: string | null;
-    confidence?: number | string | null;
-  } | null;
-}
-
-async function runGroqAnalysis(
-  input: GroqRequestInput
-): Promise<GroqResult | null> {
+async function runGroqAnalysis(input) {
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
@@ -382,9 +314,7 @@ async function runGroqAnalysis(
     return null;
   }
 
-  const model =
-    process.env.GROQ_MODEL ?? "meta-llama/llama-4-maverick-17b-128e-instruct";
-
+  const model = process.env.GROQ_MODEL ?? "meta-llama/llama-4-maverick-17b-128e-instruct";
   const prompt = buildUnifiedPrompt(input);
 
   const response = await fetch(
@@ -401,8 +331,7 @@ async function runGroqAnalysis(
         messages: [
           {
             role: "system",
-            content:
-              "Você é um analisador que SEMPRE responde em JSON válido contendo as chaves obrigatórias 'summary', 'tags', 'insights' e 'stage'. Nunca adicione texto fora do JSON.",
+            content: "Você é um analisador que SEMPRE responde em JSON válido contendo as chaves obrigatórias 'summary', 'tags', 'insights' e 'stage'. Nunca adicione texto fora do JSON.",
           },
           {
             role: "user",
@@ -414,15 +343,11 @@ async function runGroqAnalysis(
   );
 
   if (!response.ok) {
-    const errorPayload = await safeJson(response);
-    console.error("Groq request failed", response.status, errorPayload);
+    console.error("Groq request failed", response.status);
     return null;
   }
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content?.trim();
 
   if (!content) {
@@ -430,33 +355,20 @@ async function runGroqAnalysis(
   }
 
   try {
-    const parsed = JSON.parse(content) as GroqResult;
-    const summary =
-      typeof parsed.summary === "string" ? parsed.summary.trim() : "";
-    const tags = Array.isArray(parsed.tags)
-      ? parsed.tags.filter(
-          (value): value is string => typeof value === "string"
-        )
-      : [];
-    const insights =
-      parsed.insights && typeof parsed.insights === "object"
-        ? parsed.insights
-        : {};
-    const stage = parsed.stage ?? null;
-
+    const parsed = JSON.parse(content);
     return {
-      summary,
-      tags,
-      insights,
-      stage,
+      summary: typeof parsed.summary === "string" ? parsed.summary.trim() : "",
+      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((v) => typeof v === "string") : [],
+      insights: parsed.insights && typeof parsed.insights === "object" ? parsed.insights : {},
+      stage: parsed.stage ?? null,
     };
   } catch (error) {
-    console.error("Failed to parse Groq response", error, content);
+    console.error("Failed to parse Groq response", error);
     return null;
   }
 }
 
-function buildUnifiedPrompt(input: GroqRequestInput) {
+function buildUnifiedPrompt(input) {
   const tagsJson = JSON.stringify(input.tags);
   const insightsJson = JSON.stringify(input.insights);
   const stagesJson = JSON.stringify(input.stages);
@@ -485,70 +397,54 @@ ${currentTagsText}
 - **Estágios do funil**: ${stagesJson}
 
 ### Regras
-1. Reavalie tudo do zero em cada execução (não assuma que instruções anteriores ainda valem).
+1. Reavalie tudo do zero em cada execução.
 2. Use apenas slugs presentes nas listas fornecidas.
 3. Só sugira mudança de estágio se houver indícios claros.
-4. Quando não tiver dados suficientes para um item, retorne-o vazio.
+4. Quando não tiver dados suficientes, retorne vazio.
 
 ### Formato de resposta (JSON estrito, sem texto extra)
 {
   "summary": "resumo conciso em português",
   "tags": ["slug_tag"],
-  "insights": {
-    "slug_insight": { "payload": { ... }, "confidence": 0.0, "expiresAt": "ISO8601" }
-  },
+  "insights": { "slug_insight": { "payload": {}, "confidence": 0.0, "expiresAt": "ISO8601" } },
   "stage": { "slug": "slug_stage" | null, "confidence": 0.0 }
 }
 
-Certifique-se de que o JSON seja válido e não inclua comentários.`;
+Certifique-se de que o JSON seja válido.`;
 }
 
-function resolveTagSelections(tagSlugs: string[] | undefined, tags: Tag[]) {
+function resolveTagSelections(tagSlugs: string[], tags: Array<{ slug: string; id: string }>) {
   if (!tagSlugs?.length || !tags.length) {
-    return [] as Array<Pick<Tag, "id" | "slug">>;
+    return [];
   }
 
-  const tagMap = new Map(tags.map((tag) => [tag.slug, tag]));
-  const selections: Array<Pick<Tag, "id" | "slug">> = [];
+  const tagMap = new Map(tags.map((tag) => [tag.slug, tag] as [string, typeof tags[0]]));
+  const selections = [];
 
   for (const slug of tagSlugs) {
     const definition = tagMap.get(slug);
     if (!definition || selections.some((sel) => sel.id === definition.id)) {
       continue;
     }
-
     selections.push({ id: definition.id, slug: definition.slug });
   }
 
   return selections;
 }
 
-interface InsightSelection {
-  definitionId: string;
-  payload: Prisma.JsonValue | null;
-  confidence?: number | null;
-  expiresAt?: Date | null;
-}
-
-function resolveInsightSelections(
-  rawInsights: Record<string, unknown> | undefined | null,
-  definitions: InsightDefinition[]
-): InsightSelection[] {
+function resolveInsightSelections(rawInsights: Record<string, unknown>, definitions: Array<{ slug: string; id: string }>) {
   if (!rawInsights || !definitions.length) {
     return [];
   }
 
-  const definitionMap = new Map(definitions.map((item) => [item.slug, item]));
-  const selections: InsightSelection[] = [];
+  const definitionMap = new Map(definitions.map((item) => [item.slug, item] as [string, typeof definitions[0]]));
+  const selections = [];
 
   for (const [slug, value] of Object.entries(rawInsights)) {
     const definition = definitionMap.get(slug);
-    if (!definition) {
-      continue;
-    }
+    if (!definition) continue;
 
     const normalized = normalizeInsightPayload(value);
-
     selections.push({
       definitionId: definition.id,
       payload: normalized.payload,
@@ -560,21 +456,17 @@ function resolveInsightSelections(
   return selections;
 }
 
-function normalizeInsightPayload(value: unknown): {
-  payload: Prisma.JsonValue | null;
-  confidence?: number | null;
-  expiresAt?: Date | null;
-} {
+function normalizeInsightPayload(value) {
   if (!value || typeof value !== "object") {
-    return { payload: (value ?? null) as Prisma.JsonValue };
+    return { payload: value };
   }
 
-  const record = value as Record<string, unknown>;
+  const record = value;
   const rawPayload = record.payload ?? value;
   const confidenceCandidate = record.confidence;
   const expiresCandidate = record.expiresAt;
 
-  let confidence: number | undefined;
+  let confidence;
   if (typeof confidenceCandidate === "number") {
     confidence = clamp(confidenceCandidate, 0, 1);
   } else if (typeof confidenceCandidate === "string") {
@@ -584,7 +476,7 @@ function normalizeInsightPayload(value: unknown): {
     }
   }
 
-  let expiresAt: Date | undefined;
+  let expiresAt;
   if (typeof expiresCandidate === "string") {
     const parsed = new Date(expiresCandidate);
     if (!Number.isNaN(parsed.getTime())) {
@@ -593,21 +485,18 @@ function normalizeInsightPayload(value: unknown): {
   }
 
   return {
-    payload: (rawPayload ?? null) as Prisma.JsonValue,
+    payload: rawPayload,
     confidence: confidence ?? null,
     expiresAt: expiresAt ?? null,
   };
 }
 
-function resolveStageSuggestion(
-  rawStage: GroqResult["stage"],
-  stages: Stage[]
-): { definition: Stage; confidence: number } | null {
+function resolveStageSuggestion(rawStage: { slug?: string; confidence?: number | string }, stages: Array<{ slug: string; id: string; name: string; autoTransition: boolean }>) {
   if (!rawStage || !stages.length) {
     return null;
   }
 
-  const stageMap = new Map(stages.map((stage) => [stage.slug, stage]));
+  const stageMap = new Map(stages.map((stage) => [stage.slug, stage] as [string, typeof stages[0]]));
   const slug = rawStage.slug;
   if (typeof slug !== "string") {
     return null;
@@ -618,13 +507,11 @@ function resolveStageSuggestion(
     return null;
   }
 
-  const confidenceRaw = rawStage.confidence;
   let confidence = 1;
-
-  if (typeof confidenceRaw === "number") {
-    confidence = clamp(confidenceRaw, 0, 1);
-  } else if (typeof confidenceRaw === "string") {
-    const parsed = Number(confidenceRaw);
+  if (typeof rawStage.confidence === "number") {
+    confidence = clamp(rawStage.confidence, 0, 1);
+  } else if (typeof rawStage.confidence === "string") {
+    const parsed = Number(rawStage.confidence);
     if (Number.isFinite(parsed)) {
       confidence = clamp(parsed, 0, 1);
     }
@@ -633,18 +520,10 @@ function resolveStageSuggestion(
   return { definition, confidence };
 }
 
-async function safeJson(response: Response) {
-  try {
-    return await response.json();
-  } catch (error) {
-    return { error: "unable-to-parse-json", detail: String(error) };
-  }
-}
-
-function escapeJson(value: string): string {
+function escapeJson(value) {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function clamp(value: number, min: number, max: number): number {
+function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }

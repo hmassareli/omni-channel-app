@@ -53,7 +53,7 @@ export const whatsappWebhookSchema = z.union([
 
 export type WhatsappWebhookPayload = z.infer<typeof whatsappWebhookSchema>;
 
-type IngestResult =
+export type IngestResult =
   | { skipped: true; reason: string }
   | { skipped?: false; conversationId: string; messageId: string };
 

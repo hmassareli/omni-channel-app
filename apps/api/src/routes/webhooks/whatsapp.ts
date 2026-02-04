@@ -5,7 +5,9 @@ import { prisma } from "../../prisma";
 import {
   ingestWhatsappMessage,
   whatsappWebhookSchema,
+  type IngestResult,
 } from "../../services/whatsapp-ingest";
+import { syncWhatsAppChats } from "../../services/whatsapp-sync";
 
 const webhookResponseSchema = z.object({
   conversationId: z.string().optional(),
@@ -76,16 +78,17 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
 
     const result = await ingestWhatsappMessage(parseResult.data);
 
-    if (result.skipped) {
+    if ("skipped" in result && result.skipped) {
       return reply.status(202).send({
         skipped: true,
         reason: result.reason,
       });
     }
 
+    const successResult = result as Exclude<IngestResult, { skipped: true }>;
     return reply.status(202).send({
-      conversationId: result.conversationId,
-      messageId: result.messageId,
+      conversationId: successResult.conversationId,
+      messageId: successResult.messageId,
     });
   });
 }
@@ -127,6 +130,20 @@ async function handleSessionStatusWebhook(
   console.log(
     `[Webhook] Canal ${whatsappChannel.channel.name} atualizado: ${payload.status} -> ${newStatus}`
   );
+
+  // Se acabou de conectar (WORKING), dispara sync dos chats
+  if (payload.status === "WORKING") {
+    console.log(`[Webhook] Sessão ${session} conectada - iniciando sync de chats...`);
+    
+    // Executa sync em background para não bloquear o webhook
+    syncWhatsAppChats(whatsappChannel.channelId, session)
+      .then((result) => {
+        console.log(`[Webhook] Sync concluído: ${result.totalChats} chats, ${result.newConversations} novos`);
+      })
+      .catch((error) => {
+        console.error(`[Webhook] Erro no sync:`, error);
+      });
+  }
 }
 
 function mapWahaStatusToChannelStatus(
