@@ -290,7 +290,7 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
     setHasMore(true);
     try {
       const result = await api.getWhatsAppChats(channelId, { limit: 50, offset: 0 });
-      setChats(result.chats.filter(c => !c.linked));
+      setChats(result.chats.filter(c => !c.linkedToCompany));
       setHasMore(result.hasMore);
       setFetchError(null);
     } catch (err) {
@@ -313,7 +313,7 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
         limit: 50, 
         offset: chats.length 
       });
-      const newChats = result.chats.filter(c => !c.linked);
+      const newChats = result.chats.filter(c => !c.linkedToCompany);
       setChats(prev => [...prev, ...newChats]);
       setHasMore(result.hasMore);
     } catch (err) {
@@ -336,7 +336,7 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
         limit: 100, // Busca mais quando tem termo de pesquisa
         offset: 0,
       });
-      setChats(result.chats.filter(c => !c.linked));
+      setChats(result.chats.filter(c => !c.linkedToCompany));
       setHasMore(result.hasMore);
       setFetchError(null);
     } catch (err) {

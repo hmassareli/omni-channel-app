@@ -578,6 +578,7 @@ export interface WhatsAppChat {
     fromMe: boolean;
   } | null;
   linked: boolean;
+  linkedToCompany: boolean;
   contact: {
     id: string;
     name: string | null;

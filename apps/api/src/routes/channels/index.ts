@@ -528,6 +528,7 @@ export async function channelsRoutes(app: FastifyInstance) {
                 }
               : null,
             linked: !!identity,
+            linkedToCompany: !!(identity?.contact?.companyId),
             contact: identity
               ? {
                   id: identity.contact.id,
