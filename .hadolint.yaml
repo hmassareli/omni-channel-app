@@ -1,0 +1,9 @@
+# Hadolint configuration
+# https://github.com/hadolint/hadolint
+
+ignored:
+  # SecretsUsedInArgOrEnv - Ignoramos porque:
+  # - VITE_SUPABASE_ANON_KEY é uma chave pública por design (anonymous key)
+  # - VITE_REDIRECT_AUTH_URL é uma URL pública de callback
+  # Ambas são feitas para serem expostas no frontend
+  - DL3044

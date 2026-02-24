@@ -6,15 +6,21 @@ RUN apt-get update -y && apt-get install -y openssl
 
 WORKDIR /app
 
-# Argumento de build para a URL da API
+# Argumentos de build para variáveis do Vite (necessárias em build-time)
+# Nota: VITE_SUPABASE_ANON_KEY é uma chave pública por design (anon = anonymous)
+# Ela é feita para ser exposta no frontend, não é um secret real
+# hadolint ignore=DL3044
 ARG VITE_API_URL
+# hadolint ignore=DL3044
 ARG VITE_REDIRECT_AUTH_URL
+# hadolint ignore=DL3044
 ARG VITE_SUPABASE_URL
+# hadolint ignore=DL3044
 ARG VITE_SUPABASE_ANON_KEY
-ENV VITE_API_URL=$VITE_API_URL
-ENV VITE_REDIRECT_AUTH_URL=$VITE_REDIRECT_AUTH_URL
-ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
-ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_REDIRECT_AUTH_URL=$VITE_REDIRECT_AUTH_URL \
+    VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
+    VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
 COPY package.json ./
 COPY apps/web/package.json ./apps/web/

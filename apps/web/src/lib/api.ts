@@ -209,7 +209,10 @@ export interface ChannelWithDetails extends Channel {
 }
 
 export async function getChannels(): Promise<ChannelWithDetails[]> {
-  const response = await apiRequest<{ channels: ChannelWithDetails[] }>("GET", "/channels");
+  const response = await apiRequest<{ channels: ChannelWithDetails[] }>(
+    "GET",
+    "/channels",
+  );
   return response.channels;
 }
 
@@ -344,7 +347,10 @@ export interface LookupCNPJResponse {
 
 export async function lookupCNPJ(cnpj: string): Promise<LookupCNPJResponse> {
   const cleanCnpj = cnpj.replace(/\D/g, "");
-  return apiRequest<LookupCNPJResponse>("GET", `/companies/lookup/${cleanCnpj}`);
+  return apiRequest<LookupCNPJResponse>(
+    "GET",
+    `/companies/lookup/${cleanCnpj}`,
+  );
 }
 
 export async function getCompany(id: string): Promise<Company> {
@@ -526,7 +532,9 @@ interface GetContactsResponse {
   };
 }
 
-export async function getContacts(params?: GetContactsParams): Promise<GetContactsResponse> {
+export async function getContacts(
+  params?: GetContactsParams,
+): Promise<GetContactsResponse> {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set("search", params.search);
   if (params?.unlinked) searchParams.set("unlinked", "true");
@@ -536,11 +544,14 @@ export async function getContacts(params?: GetContactsParams): Promise<GetContac
   return apiRequest<GetContactsResponse>("GET", `/contacts?${searchParams}`);
 }
 
-export async function linkContactToCompany(contactId: string, companyId: string): Promise<ContactWithIdentities> {
+export async function linkContactToCompany(
+  contactId: string,
+  companyId: string,
+): Promise<ContactWithIdentities> {
   const response = await apiRequest<{ contact: ContactWithIdentities }>(
     "PUT",
     `/contacts/${contactId}/link-company`,
-    { companyId }
+    { companyId },
   );
   return response.contact;
 }
@@ -561,8 +572,14 @@ interface CreateContactResponse {
   };
 }
 
-export async function createContact(data: CreateContactData): Promise<CreateContactResponse["contact"]> {
-  const response = await apiRequest<CreateContactResponse>("POST", "/contacts", data);
+export async function createContact(
+  data: CreateContactData,
+): Promise<CreateContactResponse["contact"]> {
+  const response = await apiRequest<CreateContactResponse>(
+    "POST",
+    "/contacts",
+    data,
+  );
   return response.contact;
 }
 
@@ -601,11 +618,12 @@ interface GetWhatsAppChatsResponse {
 export interface GetWhatsAppChatsResult {
   chats: WhatsAppChat[];
   hasMore: boolean;
+  nextOffset: number;
 }
 
 export async function getWhatsAppChats(
   channelId: string,
-  params?: { search?: string; limit?: number; offset?: number }
+  params?: { search?: string; limit?: number; offset?: number },
 ): Promise<GetWhatsAppChatsResult> {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set("search", params.search);
@@ -614,11 +632,12 @@ export async function getWhatsAppChats(
 
   const response = await apiRequest<GetWhatsAppChatsResponse>(
     "GET",
-    `/channels/${channelId}/chats?${searchParams}`
+    `/channels/${channelId}/chats?${searchParams}`,
   );
   return {
     chats: response.chats,
     hasMore: response.pagination.hasMore,
+    nextOffset: response.pagination.offset + response.pagination.totalFetched,
   };
 }
 
@@ -636,6 +655,12 @@ interface LinkWhatsAppChatResponse {
   created: boolean;
 }
 
-export async function linkWhatsAppChat(data: LinkWhatsAppChatData): Promise<LinkWhatsAppChatResponse> {
-  return apiRequest<LinkWhatsAppChatResponse>("POST", "/contacts/link-whatsapp", data);
+export async function linkWhatsAppChat(
+  data: LinkWhatsAppChatData,
+): Promise<LinkWhatsAppChatResponse> {
+  return apiRequest<LinkWhatsAppChatResponse>(
+    "POST",
+    "/contacts/link-whatsapp",
+    data,
+  );
 }

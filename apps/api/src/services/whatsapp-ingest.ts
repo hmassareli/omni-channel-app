@@ -27,6 +27,7 @@ const payloadSchema = z
     _data: z
       .object({
         messageTimestamp: z.number().optional(),
+        remoteJidAlt: z.string().optional(),
       })
       .partial()
       .optional(),
@@ -96,11 +97,11 @@ export async function ingestWhatsappMessage(
     ? MessageDirection.OUTBOUND
     : MessageDirection.INBOUND;
 
-  const contactWaId = sanitizeWaId(
-    messagePayload.fromMe
-      ? messagePayload.to ?? messagePayload.chatId
-      : messagePayload.from
-  );
+  const rawContactId = messagePayload.fromMe
+    ? messagePayload.to ?? messagePayload.chatId
+    : messagePayload.from;
+
+  let contactWaId = sanitizeWaId(rawContactId);
 
   if (!contactWaId) {
     await prisma.rawWhatsappMessage.update({
@@ -109,6 +110,20 @@ export async function ingestWhatsappMessage(
     });
 
     return { skipped: true, reason: "missing-contact-identifier" };
+  }
+
+  // Resolve LID → telefone real via _data.remoteJidAlt
+  // WhatsApp migrou contatos para @lid — o ID não é o telefone.
+  if (rawContactId?.includes("@lid")) {
+    const originalLid = contactWaId;
+    const altPhone = sanitizeWaId(messagePayload._data?.remoteJidAlt);
+    if (altPhone) contactWaId = altPhone;
+
+    if (contactWaId !== originalLid) {
+      console.log(`[Ingest] LID ${originalLid} → ${contactWaId}`);
+    } else {
+      console.warn(`[Ingest] LID ${originalLid} não resolvido — armazenado como LID`);
+    }
   }
 
   const sentAt = resolveTimestamp(messagePayload);

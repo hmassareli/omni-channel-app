@@ -10,7 +10,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
 
 // Helper para extrair ID da URL
@@ -147,7 +147,13 @@ const TimelineEvent = ({ time, title, type }) => (
 // Modals
 // ============================================================================
 
-const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companyId, stages }) => {
+const CreateOpportunityModal = ({
+  isOpen,
+  onClose,
+  onCreated,
+  companyId,
+  stages,
+}) => {
   const [stageId, setStageId] = useState("");
   const [estimatedValue, setEstimatedValue] = useState("");
   const [notes, setNotes] = useState("");
@@ -177,7 +183,9 @@ const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companyId, stages 
       setEstimatedValue("");
       setNotes("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao criar oportunidade");
+      setError(
+        err instanceof Error ? err.message : "Erro ao criar oportunidade",
+      );
     } finally {
       setLoading(false);
     }
@@ -189,19 +197,28 @@ const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companyId, stages 
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold text-gray-800">Nova Oportunidade</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h2 className="text-lg font-semibold text-gray-800">
+            Nova Oportunidade
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6">
           {error && (
-            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg mb-4">{error}</div>
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg mb-4">
+              {error}
+            </div>
           )}
 
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Estágio *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Estágio *
+            </label>
             <select
               value={stageId}
               onChange={(e) => setStageId(e.target.value)}
@@ -209,13 +226,17 @@ const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companyId, stages 
               required
             >
               {stages.map((stage) => (
-                <option key={stage.id} value={stage.id}>{stage.name}</option>
+                <option key={stage.id} value={stage.id}>
+                  {stage.name}
+                </option>
               ))}
             </select>
           </div>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Valor Estimado (R$)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Valor Estimado (R$)
+            </label>
             <input
               type="number"
               value={estimatedValue}
@@ -228,7 +249,9 @@ const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companyId, stages 
           </div>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Observações
+            </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -239,7 +262,11 @@ const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companyId, stages 
           </div>
 
           <div className="flex gap-3 justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
               Cancelar
             </button>
             <button
@@ -258,18 +285,27 @@ const CreateOpportunityModal = ({ isOpen, onClose, onCreated, companyId, stages 
 
 type ContactModalTab = "whatsapp" | "manual";
 
-const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels }) => {
+const CreateContactModal = ({
+  isOpen,
+  onClose,
+  onCreated,
+  companyId,
+  channels,
+}) => {
   const [activeTab, setActiveTab] = useState<ContactModalTab>("whatsapp");
-  
+
   // WhatsApp tab state
   const [search, setSearch] = useState("");
   const [chats, setChats] = useState<api.WhatsAppChat[]>([]);
-  const [selectedChat, setSelectedChat] = useState<api.WhatsAppChat | null>(null);
+  const [selectedChat, setSelectedChat] = useState<api.WhatsAppChat | null>(
+    null,
+  );
   const [searchLoading, setSearchLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const wahaOffset = useRef(0);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  
+
   // Shared form state
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -279,24 +315,33 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
   const [error, setError] = useState<string | null>(null);
 
   // Usa o primeiro canal WhatsApp disponível
-  const channelId = channels.find((c: { type: string }) => c.type === "WHATSAPP")?.id;
+  const channelId = channels.find(
+    (c: { type: string }) => c.type === "WHATSAPP",
+  )?.id;
 
   // Carrega chats iniciais (sem busca)
   const loadInitialChats = async () => {
     if (!channelId) return;
-    
+
     setSearchLoading(true);
     setChats([]);
     setHasMore(true);
+    wahaOffset.current = 0;
     try {
-      const result = await api.getWhatsAppChats(channelId, { limit: 50, offset: 0 });
-      setChats(result.chats.filter(c => !c.linkedToCompany));
+      const result = await api.getWhatsAppChats(channelId, {
+        limit: 50,
+        offset: 0,
+      });
+      setChats(result.chats.filter((c) => !c.linkedToCompany));
       setHasMore(result.hasMore);
+      wahaOffset.current = result.nextOffset;
       setFetchError(null);
     } catch (err) {
       console.error("Erro ao buscar chats:", err);
       setChats([]);
-      setFetchError("Não foi possível carregar os chats do WhatsApp. Tente novamente ou crie o contato manualmente.");
+      setFetchError(
+        "Não foi possível carregar os chats do WhatsApp. Tente novamente ou crie o contato manualmente.",
+      );
     } finally {
       setSearchLoading(false);
     }
@@ -305,17 +350,18 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
   // Carrega mais chats (próxima página)
   const loadMoreChats = async () => {
     if (!channelId || loadingMore || !hasMore) return;
-    
+
     setLoadingMore(true);
     try {
-      const result = await api.getWhatsAppChats(channelId, { 
+      const result = await api.getWhatsAppChats(channelId, {
         search: search || undefined,
-        limit: 50, 
-        offset: chats.length 
+        limit: 50,
+        offset: wahaOffset.current,
       });
-      const newChats = result.chats.filter(c => !c.linkedToCompany);
-      setChats(prev => [...prev, ...newChats]);
+      const newChats = result.chats.filter((c) => !c.linkedToCompany);
+      setChats((prev) => [...prev, ...newChats]);
       setHasMore(result.hasMore);
+      wahaOffset.current = result.nextOffset;
     } catch (err) {
       console.error("Erro ao carregar mais chats:", err);
     } finally {
@@ -326,23 +372,27 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
   // Busca com termo específico
   const searchChats = async (searchTerm: string) => {
     if (!channelId) return;
-    
+
     setSearchLoading(true);
     setChats([]);
     setHasMore(true);
+    wahaOffset.current = 0;
     try {
       const result = await api.getWhatsAppChats(channelId, {
         search: searchTerm || undefined,
         limit: 100, // Busca mais quando tem termo de pesquisa
         offset: 0,
       });
-      setChats(result.chats.filter(c => !c.linkedToCompany));
+      setChats(result.chats.filter((c) => !c.linkedToCompany));
       setHasMore(result.hasMore);
+      wahaOffset.current = result.nextOffset;
       setFetchError(null);
     } catch (err) {
       console.error("Erro ao buscar chats:", err);
       setChats([]);
-      setFetchError("Não foi possível carregar os chats do WhatsApp. Tente novamente ou crie o contato manualmente.");
+      setFetchError(
+        "Não foi possível carregar os chats do WhatsApp. Tente novamente ou crie o contato manualmente.",
+      );
     } finally {
       setSearchLoading(false);
     }
@@ -442,16 +492,24 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
     const now = new Date();
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
+    const diffDays = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
     if (diffDays === 0) {
-      return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      return date.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     } else if (diffDays === 1) {
       return "Ontem";
     } else if (diffDays < 7) {
       return date.toLocaleDateString("pt-BR", { weekday: "short" });
     }
-    return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+    });
   };
 
   return (
@@ -461,7 +519,13 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
           <h2 className="text-lg font-semibold text-gray-800">
             {selectedChat ? "Vincular Contato" : "Novo Contato"}
           </h2>
-          <button onClick={() => { onClose(); resetForm(); }} className="text-gray-400 hover:text-gray-600">
+          <button
+            onClick={() => {
+              onClose();
+              resetForm();
+            }}
+            className="text-gray-400 hover:text-gray-600"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -495,7 +559,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
         )}
 
         {error && (
-          <div className="mx-6 mt-4 bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>
+          <div className="mx-6 mt-4 bg-red-50 text-red-600 text-sm p-3 rounded-lg">
+            {error}
+          </div>
         )}
 
         {/* WhatsApp Tab - Chat Selecionado */}
@@ -507,14 +573,20 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
                   <MessageSquare className="w-6 h-6 text-green-600" />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-800">{selectedChat.name || "Sem nome"}</p>
-                  <p className="text-sm text-gray-500">{formatPhone(selectedChat.waId)}</p>
+                  <p className="font-medium text-gray-800">
+                    {selectedChat.name || "Sem nome"}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {formatPhone(selectedChat.waId)}
+                  </p>
                 </div>
               </div>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Contato</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nome do Contato
+              </label>
               <input
                 type="text"
                 value={name}
@@ -525,7 +597,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cargo/Função</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cargo/Função
+              </label>
               <input
                 type="text"
                 value={role}
@@ -536,9 +610,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
             </div>
 
             <div className="flex gap-3 justify-end">
-              <button 
-                type="button" 
-                onClick={() => setSelectedChat(null)} 
+              <button
+                type="button"
+                onClick={() => setSelectedChat(null)}
                 className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Voltar
@@ -560,7 +634,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
               <div className="p-6 text-center text-gray-500">
                 <MessageSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                 <p>Nenhum canal WhatsApp configurado.</p>
-                <p className="text-sm mt-2">Configure um canal primeiro ou crie o contato manualmente.</p>
+                <p className="text-sm mt-2">
+                  Configure um canal primeiro ou crie o contato manualmente.
+                </p>
                 <button
                   onClick={() => setActiveTab("manual")}
                   className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
@@ -592,7 +668,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
                   ) : fetchError ? (
                     <div className="p-8 text-center">
                       <MessageSquare className="w-12 h-12 mx-auto mb-4 text-orange-400" />
-                      <p className="text-orange-600 font-medium">Erro ao carregar chats</p>
+                      <p className="text-orange-600 font-medium">
+                        Erro ao carregar chats
+                      </p>
                       <p className="text-sm text-gray-500 mt-2">{fetchError}</p>
                       <button
                         onClick={() => setActiveTab("manual")}
@@ -605,7 +683,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
                     <div className="p-8 text-center text-gray-500">
                       <MessageSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                       <p>Nenhum chat disponível para vincular.</p>
-                      <p className="text-sm mt-2">Todos os chats já estão vinculados ou não há conversas.</p>
+                      <p className="text-sm mt-2">
+                        Todos os chats já estão vinculados ou não há conversas.
+                      </p>
                       <button
                         onClick={() => setActiveTab("manual")}
                         className="mt-4 text-purple-600 hover:text-purple-700 text-sm font-medium"
@@ -623,7 +703,11 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
                         >
                           <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center shrink-0 overflow-hidden">
                             {chat.picture ? (
-                              <img src={chat.picture} alt="" className="w-full h-full object-cover" />
+                              <img
+                                src={chat.picture}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
                             ) : (
                               <MessageSquare className="w-6 h-6 text-green-600" />
                             )}
@@ -639,7 +723,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
                                 </span>
                               )}
                             </div>
-                            <p className="text-sm text-gray-500">{formatPhone(chat.waId)}</p>
+                            <p className="text-sm text-gray-500">
+                              {formatPhone(chat.waId)}
+                            </p>
                             {chat.lastMessage && (
                               <p className="text-sm text-gray-400 truncate mt-1">
                                 {chat.lastMessage.fromMe && "Você: "}
@@ -649,7 +735,7 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
                           </div>
                         </button>
                       ))}
-                      
+
                       {/* Botão carregar mais */}
                       {hasMore && (
                         <div className="p-4 text-center">
@@ -680,7 +766,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
           /* Manual Tab - Formulário */
           <form onSubmit={handleSubmitManual} className="p-6">
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nome *
+              </label>
               <input
                 type="text"
                 value={name}
@@ -692,7 +780,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">WhatsApp</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                WhatsApp
+              </label>
               <input
                 type="text"
                 value={phone}
@@ -700,11 +790,15 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
                 placeholder="5511999999999"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
               />
-              <p className="text-xs text-gray-400 mt-1">Formato: código do país + DDD + número</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Formato: código do país + DDD + número
+              </p>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">E-mail</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                E-mail
+              </label>
               <input
                 type="email"
                 value={email}
@@ -715,7 +809,9 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cargo/Função</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cargo/Função
+              </label>
               <input
                 type="text"
                 value={role}
@@ -726,9 +822,12 @@ const CreateContactModal = ({ isOpen, onClose, onCreated, companyId, channels })
             </div>
 
             <div className="flex gap-3 justify-end">
-              <button 
-                type="button" 
-                onClick={() => { onClose(); resetForm(); }} 
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  resetForm();
+                }}
                 className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Cancelar
@@ -769,12 +868,13 @@ export function CompanyTimeline() {
     setLoading(true);
 
     try {
-      const [companyData, timelineData, stagesData, channelsData] = await Promise.all([
-        api.getCompany(id),
-        api.getCompanyTimeline(id),
-        api.getStages(),
-        api.getChannels(),
-      ]);
+      const [companyData, timelineData, stagesData, channelsData] =
+        await Promise.all([
+          api.getCompany(id),
+          api.getCompanyTimeline(id),
+          api.getStages(),
+          api.getChannels(),
+        ]);
       setCompany(companyData);
       setTimeline(timelineData);
       setStages(stagesData);
@@ -1005,7 +1105,9 @@ export function CompanyTimeline() {
           {activeTab === "contacts" && (
             <>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-800">Contatos</h2>
+                <h2 className="text-lg font-semibold text-gray-800">
+                  Contatos
+                </h2>
                 <button
                   onClick={() => setShowContactModal(true)}
                   className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"
@@ -1035,7 +1137,9 @@ export function CompanyTimeline() {
                               {contact.name || "Sem nome"}
                             </p>
                             <p className="text-sm text-gray-500">
-                              {contact.identities.map((i) => i.value).join(", ")}
+                              {contact.identities
+                                .map((i) => i.value)
+                                .join(", ")}
                             </p>
                           </div>
                         </div>
@@ -1050,7 +1154,9 @@ export function CompanyTimeline() {
           {activeTab === "opportunities" && (
             <>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-800">Oportunidades</h2>
+                <h2 className="text-lg font-semibold text-gray-800">
+                  Oportunidades
+                </h2>
                 <button
                   onClick={() => setShowOpportunityModal(true)}
                   className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"

@@ -480,18 +480,74 @@ export async function channelsRoutes(app: FastifyInstance) {
       }
 
       try {
-        // Busca chats do WAHA com paginação
-        const wahaChats = await waha.getChatsOverview({
-          sessionName: channel.whatsappDetails.sessionName,
-          limit: query.limit,
-          offset: query.offset,
-        });
+        const sessionName = channel.whatsappDetails.sessionName;
+        const batchSize = query.limit * 2;
 
-        // Filtra por grupos (termina com @g.us) - só retorna contatos diretos
-        let chats = wahaChats.filter((chat) => chat.id.endsWith("@c.us"));
+        const firstBatch = await waha.getChatsOverview({ sessionName, limit: batchSize, offset: query.offset });
+
+        // LID → telefone: extraído do _data.Info.RecipientAlt das próprias mensagens
+        const lidToPhone = new Map<string, string>();
+
+        // Classifica chats em @c.us (diretos) e @lid (pra enriquecer)
+        const directChats: waha.WAHAChatOverview[] = [];
+        const lidChats: waha.WAHAChatOverview[] = [];
+        let wahaOffset = query.offset;
+        let wahaHasMore = true;
+
+        const classifyBatch = (batch: waha.WAHAChatOverview[]) => {
+          wahaHasMore = batch.length >= batchSize;
+          wahaOffset += batch.length;
+          for (const chat of batch) {
+            if (chat.id.endsWith("@c.us")) {
+              directChats.push(chat);
+              // Extrai mapeamento LID do _data da própria mensagem
+              const recipAlt = chat.lastMessage?._data?.Info?.RecipientAlt;
+              if (recipAlt?.endsWith("@lid")) {
+                lidToPhone.set(recipAlt.replace(/@lid$/, ""), chat.id.replace("@c.us", ""));
+              }
+            } else if (chat.id.endsWith("@lid")) {
+              lidChats.push(chat);
+              // Extrai mapeamento phone do _data da própria mensagem
+              const recipAlt = chat.lastMessage?._data?.Info?.RecipientAlt;
+              if (recipAlt?.endsWith("@s.whatsapp.net")) {
+                lidToPhone.set(chat.id.replace(/@lid$/, ""), recipAlt.replace(/@s\.whatsapp\.net$/, ""));
+              }
+            }
+          }
+        };
+
+        classifyBatch(firstBatch);
+
+        // Busca mais batches até preencher o limit
+        for (let i = 0; i < 5 && directChats.length < query.limit && wahaHasMore; i++) {
+          const batch = await waha.getChatsOverview({ sessionName, limit: batchSize, offset: wahaOffset });
+          classifyBatch(batch);
+        }
+        // Trunca ao limit pedido
+        directChats.length = Math.min(directChats.length, query.limit);
+
+        // Enriquece lastMessage dos @c.us com o @lid correspondente (se mais recente)
+        if (lidChats.length > 0) {
+          const phoneToLastMsg = new Map<string, waha.WAHAChatOverview["lastMessage"]>();
+          for (const lid of lidChats) {
+            if (!lid.lastMessage) continue;
+            const phone = lidToPhone.get(lid.id.replace(/@lid$/, ""));
+            if (!phone) continue;
+            const prev = phoneToLastMsg.get(phone);
+            if (!prev || lid.lastMessage.timestamp > prev.timestamp) {
+              phoneToLastMsg.set(phone, lid.lastMessage);
+            }
+          }
+          for (const chat of directChats) {
+            const lidMsg = phoneToLastMsg.get(chat.id.replace("@c.us", ""));
+            if (lidMsg && (!chat.lastMessage || lidMsg.timestamp > chat.lastMessage.timestamp)) {
+              chat.lastMessage = lidMsg;
+            }
+          }
+        }
 
         // Busca quais chats já estão vinculados a contatos (pelo número do WhatsApp)
-        const waIds = chats.map((c) => c.id.replace("@c.us", ""));
+        const waIds = directChats.map((c) => c.id.replace("@c.us", ""));
         const existingIdentities = await prisma.identity.findMany({
           where: {
             type: "WHATSAPP",
@@ -511,7 +567,7 @@ export async function channelsRoutes(app: FastifyInstance) {
         );
 
         // Monta resposta com info de vínculo
-        const result = chats.map((chat) => {
+        const result = directChats.map((chat) => {
           const waId = chat.id.replace("@c.us", "");
           const identity = identityMap.get(waId);
 
@@ -528,7 +584,7 @@ export async function channelsRoutes(app: FastifyInstance) {
                 }
               : null,
             linked: !!identity,
-            linkedToCompany: !!(identity?.contact?.companyId),
+            linkedToCompany: !!identity?.contact?.companyId,
             contact: identity
               ? {
                   id: identity.contact.id,
@@ -550,17 +606,16 @@ export async function channelsRoutes(app: FastifyInstance) {
           );
         }
 
-        // Indica se tem mais páginas (se retornou o limite, provavelmente tem mais)
-        const hasMore = wahaChats.length >= query.limit;
+        const hasMore = wahaHasMore || directChats.length >= query.limit;
 
-        return reply.send({ 
+        return reply.send({
           chats: filtered,
           pagination: {
             offset: query.offset,
             limit: query.limit,
             hasMore,
-            totalFetched: wahaChats.length,
-          }
+            totalFetched: wahaOffset - query.offset,
+          },
         });
       } catch (error) {
         console.error("[Channels] Erro ao buscar chats:", error);

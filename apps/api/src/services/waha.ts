@@ -310,7 +310,7 @@ export async function configureWebhooks(
 // ============================================================================
 
 export interface WAHAChatOverview {
-  id: string; // formato: 5511999999999@c.us
+  id: string; // formato: 5511999999999@c.us ou 123456@lid
   name: string | null;
   picture: string | null;
   lastMessage?: {
@@ -319,6 +319,14 @@ export interface WAHAChatOverview {
     from: string;
     fromMe: boolean;
     body: string;
+    _data?: {
+      Info?: {
+        Chat?: string;
+        Sender?: string;
+        SenderAlt?: string;
+        RecipientAlt?: string;
+      };
+    };
   };
 }
 
@@ -326,6 +334,8 @@ export interface GetChatsOptions {
   sessionName: string;
   limit?: number;
   offset?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
 }
 
 /**
@@ -335,17 +345,17 @@ export interface GetChatsOptions {
 export async function getChatsOverview(
   options: GetChatsOptions
 ): Promise<WAHAChatOverview[]> {
-  const { sessionName, limit, offset } = options;
+  const { sessionName, limit, offset, sortBy = "messageTimestamp", sortOrder = "desc" } = options;
   const params = new URLSearchParams();
   if (limit !== undefined) params.set("limit", String(limit));
   if (offset !== undefined) params.set("offset", String(offset));
+  params.set("sortBy", sortBy);
+  params.set("sortOrder", sortOrder);
   const query = params.toString();
 
   return wahaRequest<WAHAChatOverview[]>(
     "GET",
-    query
-      ? `/api/${sessionName}/chats/overview?${query}`
-      : `/api/${sessionName}/chats/overview`
+    `/api/${sessionName}/chats/overview?${query}`
   );
 }
 
@@ -413,3 +423,5 @@ export async function addLabelToChat(
     labels: [{ id: labelId }],
   });
 }
+
+
