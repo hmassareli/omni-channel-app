@@ -12,20 +12,20 @@ DECLARE
     suspect_id UUID;
 BEGIN
     FOR op IN
-        SELECT id FROM operations WHERE "onboardingCompleted" = true
+        SELECT id FROM omni_operations WHERE "onboardingCompleted" = true
     LOOP
         -- Move all opportunities from this operation's old stages to NULL temporarily
         UPDATE opportunities
         SET "stageId" = NULL
-        WHERE "stageId" IN (SELECT id FROM stages WHERE "operationId" = op.id);
+        WHERE "stageId" IN (SELECT id FROM omni_stages WHERE "operationId" = op.id);
 
         -- Delete old stages for this operation
-        DELETE FROM stages WHERE "operationId" = op.id;
+        DELETE FROM omni_stages WHERE "operationId" = op.id;
 
         -- Create new default stages
         suspect_id := gen_random_uuid();
 
-        INSERT INTO stages (id, name, slug, "order", color, "operationId", "createdAt", "updatedAt")
+        INSERT INTO omni_stages (id, name, slug, "order", color, "operationId", "createdAt", "updatedAt")
         VALUES
             (suspect_id, 'Suspect', 'suspect', 0, '#94a3b8', op.id, NOW(), NOW()),
             (gen_random_uuid(), 'Prospect', 'prospect', 1, '#6366f1', op.id, NOW(), NOW()),
@@ -41,8 +41,8 @@ BEGIN
         AND "companyId" IN (
             SELECT c.id FROM companies c
             JOIN contacts ct ON ct."companyId" = c.id
-            JOIN conversations conv ON conv."contactId" = ct.id
-            JOIN channels ch ON conv."channelId" = ch.id
+            JOIN omni_conversations conv ON conv."contactId" = ct.id
+            JOIN omni_channels ch ON conv."channelId" = ch.id
             WHERE ch."operationId" = op.id
         );
 
