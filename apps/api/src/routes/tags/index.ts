@@ -84,11 +84,12 @@ export async function tagsRoutes(app: FastifyInstance) {
    * GET /tags/:id
    * Busca uma tag por ID
    */
-  app.get("/:id", async (request, reply) => {
+  app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = tagParamsSchema.parse(request.params);
 
-    const tag = await prisma.tag.findUnique({
-      where: { id },
+    const tag = await prisma.tag.findFirst({
+      where: { id, operationId: user.operationId },
       include: {
         operation: { select: { id: true, name: true } },
         _count: { select: { contacts: true } },
@@ -106,21 +107,20 @@ export async function tagsRoutes(app: FastifyInstance) {
    * POST /tags
    * Cria uma nova tag
    */
-  app.post("/", async (request, reply) => {
+  app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = createTagSchema.parse(request.body);
 
-    // Verifica se operation existe
-    const operation = await prisma.operation.findUnique({
-      where: { id: body.operationId },
-    });
-    if (!operation) {
-      return reply.status(404).send({ error: "Operation não encontrada" });
+    if (!user.operationId) {
+      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
     }
+
+    const operationId = user.operationId;
 
     // Verifica se já existe tag com mesmo nome na operation
     const existingTag = await prisma.tag.findFirst({
       where: {
-        operationId: body.operationId,
+        operationId,
         name: body.name,
       },
     });
@@ -142,7 +142,7 @@ export async function tagsRoutes(app: FastifyInstance) {
       data: {
         name: body.name,
         slug,
-        operationId: body.operationId,
+        operationId,
         color: body.color,
         promptCondition: body.promptCondition,
       },
@@ -158,11 +158,12 @@ export async function tagsRoutes(app: FastifyInstance) {
    * PUT /tags/:id
    * Atualiza uma tag
    */
-  app.put("/:id", async (request, reply) => {
+  app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = tagParamsSchema.parse(request.params);
     const body = updateTagSchema.parse(request.body);
 
-    const existing = await prisma.tag.findUnique({ where: { id } });
+    const existing = await prisma.tag.findFirst({ where: { id, operationId: user.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Tag não encontrada" });
     }
@@ -198,10 +199,11 @@ export async function tagsRoutes(app: FastifyInstance) {
    * DELETE /tags/:id
    * Remove uma tag
    */
-  app.delete("/:id", async (request, reply) => {
+  app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = tagParamsSchema.parse(request.params);
 
-    const existing = await prisma.tag.findUnique({ where: { id } });
+    const existing = await prisma.tag.findFirst({ where: { id, operationId: user.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Tag não encontrada" });
     }

@@ -49,7 +49,9 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
     const query = opportunityQuerySchema.parse(request.query);
 
     // Filtra por operation do usuário (via stages)
-    const where: Prisma.OpportunityWhereInput = {};
+    const where: Prisma.OpportunityWhereInput = {
+      stage: { operationId: user.operationId },
+    };
 
     if (query.stageId) {
       where.stageId = query.stageId;
@@ -61,23 +63,6 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
 
     if (query.companyId) {
       where.companyId = query.companyId;
-    }
-
-    // Se não for admin/manager, só mostra oportunidades da operação
-    if (user.role !== "ADMIN" && user.role !== "MANAGER") {
-      where.company = {
-        contacts: {
-          some: {
-            conversations: {
-              some: {
-                channel: {
-                  operationId: user.operationId,
-                },
-              },
-            },
-          },
-        },
-      };
     }
 
     const [opportunities, total] = await Promise.all([
@@ -122,6 +107,7 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
    * Cria uma nova oportunidade
    */
   app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = createOpportunitySchema.parse(request.body);
 
     // Verifica se a empresa existe
@@ -133,19 +119,19 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Empresa não encontrada" });
     }
 
-    // Verifica se o stage existe
-    const stage = await prisma.stage.findUnique({
-      where: { id: body.stageId },
+    // Verifica se o stage pertence à operação do usuário
+    const stage = await prisma.stage.findFirst({
+      where: { id: body.stageId, operationId: user.operationId },
     });
 
     if (!stage) {
       return reply.status(404).send({ error: "Estágio não encontrado" });
     }
 
-    // Se agentId foi fornecido, verifica se existe
+    // Se agentId foi fornecido, verifica se pertence à operação
     if (body.agentId) {
-      const agent = await prisma.agent.findUnique({
-        where: { id: body.agentId },
+      const agent = await prisma.agent.findFirst({
+        where: { id: body.agentId, operationId: user.operationId },
       });
       if (!agent) {
         return reply.status(404).send({ error: "Atendente não encontrado" });
@@ -181,10 +167,11 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
    * Busca uma oportunidade por ID
    */
   app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = opportunityParamsSchema.parse(request.params);
 
-    const opportunity = await prisma.opportunity.findUnique({
-      where: { id },
+    const opportunity = await prisma.opportunity.findFirst({
+      where: { id, stage: { operationId: user.operationId } },
       include: {
         company: true,
         stage: true,
@@ -206,18 +193,19 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
    * Atualiza uma oportunidade
    */
   app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = opportunityParamsSchema.parse(request.params);
     const body = updateOpportunitySchema.parse(request.body);
 
-    const existing = await prisma.opportunity.findUnique({ where: { id } });
+    const existing = await prisma.opportunity.findFirst({ where: { id, stage: { operationId: user.operationId } } });
     if (!existing) {
       return reply.status(404).send({ error: "Oportunidade não encontrada" });
     }
 
-    // Se stageId foi fornecido, verifica se existe
+    // Se stageId foi fornecido, verifica se pertence à operação
     if (body.stageId) {
-      const stage = await prisma.stage.findUnique({
-        where: { id: body.stageId },
+      const stage = await prisma.stage.findFirst({
+        where: { id: body.stageId, operationId: user.operationId },
       });
       if (!stage) {
         return reply.status(404).send({ error: "Estágio não encontrado" });
@@ -227,8 +215,8 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
     // Se agentId foi fornecido (mesmo que null), verifica
     if (body.agentId !== undefined) {
       if (body.agentId !== null) {
-        const agent = await prisma.agent.findUnique({
-          where: { id: body.agentId },
+        const agent = await prisma.agent.findFirst({
+          where: { id: body.agentId, operationId: user.operationId },
         });
         if (!agent) {
           return reply.status(404).send({ error: "Atendente não encontrado" });
@@ -265,9 +253,10 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
    * Remove uma oportunidade
    */
   app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = opportunityParamsSchema.parse(request.params);
 
-    const existing = await prisma.opportunity.findUnique({ where: { id } });
+    const existing = await prisma.opportunity.findFirst({ where: { id, stage: { operationId: user.operationId } } });
     if (!existing) {
       return reply.status(404).send({ error: "Oportunidade não encontrada" });
     }
@@ -282,10 +271,11 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
    * Retorna a timeline agregada de TODOS os contatos da empresa da oportunidade
    */
   app.get("/:id/timeline", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = opportunityParamsSchema.parse(request.params);
 
-    const opportunity = await prisma.opportunity.findUnique({
-      where: { id },
+    const opportunity = await prisma.opportunity.findFirst({
+      where: { id, stage: { operationId: user.operationId } },
       include: { company: true },
     });
 
@@ -347,16 +337,17 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
    * Move a oportunidade para outro estágio
    */
   app.put("/:id/move", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = opportunityParamsSchema.parse(request.params);
     const body = z.object({ stageId: z.uuid("ID do estágio é obrigatório") }).parse(request.body);
 
-    const existing = await prisma.opportunity.findUnique({ where: { id } });
+    const existing = await prisma.opportunity.findFirst({ where: { id, stage: { operationId: user.operationId } } });
     if (!existing) {
       return reply.status(404).send({ error: "Oportunidade não encontrada" });
     }
 
-    const stage = await prisma.stage.findUnique({
-      where: { id: body.stageId },
+    const stage = await prisma.stage.findFirst({
+      where: { id: body.stageId, operationId: user.operationId },
     });
     if (!stage) {
       return reply.status(404).send({ error: "Estágio não encontrado" });
@@ -390,7 +381,7 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
 
     // Busca todos os estágios da operação
     const stages = await prisma.stage.findMany({
-      where: user.operationId ? { operationId: user.operationId } : {},
+      where: user.operationId ? { operationId: user.operationId } : { id: "none" },
       orderBy: { order: "asc" },
       select: { id: true, name: true, color: true, order: true },
     });
@@ -398,27 +389,8 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
     // Para cada estágio, busca as oportunidades
     const kanbanData = await Promise.all(
       stages.map(async (stage) => {
-        const where: Record<string, unknown> = { stageId: stage.id };
-
-        // Se não for admin/manager, filtra pela operação
-        if (user.role !== "ADMIN" && user.role !== "MANAGER") {
-          where.company = {
-            contacts: {
-              some: {
-                conversations: {
-                  some: {
-                    channel: {
-                      operationId: user.operationId,
-                    },
-                  },
-                },
-              },
-            },
-          };
-        }
-
         const opportunities = await prisma.opportunity.findMany({
-          where,
+          where: { stageId: stage.id },
           include: {
             company: {
               select: { id: true, name: true, alias: true, taxId: true },

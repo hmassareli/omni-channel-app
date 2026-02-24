@@ -9,6 +9,7 @@ import { CompaniesPage } from "./pages/CompaniesPage";
 import { CompanyTimeline } from "./pages/CompanyTimeline";
 import { ContactTimeline } from "./pages/ContactTimeline";
 import { OpportunitiesPage } from "./pages/OpportunitiesPage";
+import { OpportunityTimeline } from "./pages/OpportunityTimeline";
 
 // --- Componentes de Layout ---
 
@@ -44,7 +45,8 @@ const TopHeader = ({ userName, userEmail, onSignOut, currentRoute }: TopHeaderPr
         <nav className="flex items-center gap-1">
           {navItems.map((item) => {
             const isActive = currentRoute === item.route || 
-              (item.route === "companies" && currentRoute === "company");
+              (item.route === "companies" && currentRoute === "company") ||
+              (item.route === "opportunities" && currentRoute === "opportunity");
             return (
               <a
                 key={item.href}
@@ -126,6 +128,7 @@ function getRoute():
   | "companies"
   | "company"
   | "opportunities"
+  | "opportunity"
   | "onboarding"
   | "home" {
   const path = window.location.pathname;
@@ -143,6 +146,9 @@ function getRoute():
   }
   if (path.startsWith("/companies")) {
     return "companies";
+  }
+  if (path.match(/^\/opportunities\/[^/]+/)) {
+    return "opportunity";
   }
   if (path.startsWith("/opportunities")) {
     return "opportunities";
@@ -241,6 +247,8 @@ function Dashboard() {
         return <CompaniesPage />;
       case "company":
         return <CompanyTimeline />;
+      case "opportunity":
+        return <OpportunityTimeline />;
       case "opportunities":
         return <OpportunitiesPage />;
       default:

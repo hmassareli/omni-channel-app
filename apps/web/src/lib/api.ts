@@ -197,6 +197,11 @@ export async function getAgentsByOperation(
   return response.agents;
 }
 
+export async function getAgents(): Promise<AgentWithChannels[]> {
+  const response = await apiRequest<GetAgentsResponse>("GET", "/agents");
+  return response.agents;
+}
+
 // ============================================================================
 // Channels (WhatsApp)
 // ============================================================================
@@ -488,6 +493,61 @@ export async function moveOpportunity(
 
 export async function deleteOpportunity(id: string): Promise<void> {
   await apiRequest<void>("DELETE", `/opportunities/${id}`);
+}
+
+export interface OpportunityDetail extends Opportunity {
+  company: Company;
+  stage: Stage;
+  agent: { id: string; name: string; avatarUrl: string | null } | null;
+}
+
+export async function getOpportunity(
+  id: string,
+): Promise<OpportunityDetail> {
+  const response = await apiRequest<{ opportunity: OpportunityDetail }>(
+    "GET",
+    `/opportunities/${id}`,
+  );
+  return response.opportunity;
+}
+
+export interface OpportunityTimelineEvent {
+  id: string;
+  type: string;
+  content: string;
+  metadata: unknown;
+  occurredAt: string;
+  contact: { id: string; name: string | null };
+  conversation: {
+    id: string;
+    channel: { id: string; name: string; type: string };
+  } | null;
+}
+
+export interface OpportunityTimelineResponse {
+  events: OpportunityTimelineEvent[];
+  contacts: Array<{ id: string; name: string | null }>;
+  company: { id: string; name: string };
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+export async function getOpportunityTimeline(
+  opportunityId: string,
+  params?: { limit?: number; offset?: number },
+): Promise<OpportunityTimelineResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.limit) searchParams.set("limit", params.limit.toString());
+  if (params?.offset) searchParams.set("offset", params.offset.toString());
+
+  return apiRequest<OpportunityTimelineResponse>(
+    "GET",
+    `/opportunities/${opportunityId}/timeline?${searchParams}`,
+  );
 }
 
 // ============================================================================

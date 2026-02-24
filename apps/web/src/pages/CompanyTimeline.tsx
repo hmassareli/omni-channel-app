@@ -153,8 +153,10 @@ const CreateOpportunityModal = ({
   onCreated,
   companyId,
   stages,
+  agents,
 }) => {
   const [stageId, setStageId] = useState("");
+  const [agentId, setAgentId] = useState("");
   const [estimatedValue, setEstimatedValue] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -175,11 +177,13 @@ const CreateOpportunityModal = ({
       await api.createOpportunity({
         companyId,
         stageId,
+        agentId: agentId || undefined,
         estimatedValue: estimatedValue ? parseFloat(estimatedValue) : undefined,
         notes: notes || undefined,
       });
       onCreated();
       onClose();
+      setAgentId("");
       setEstimatedValue("");
       setNotes("");
     } catch (err) {
@@ -228,6 +232,24 @@ const CreateOpportunityModal = ({
               {stages.map((stage) => (
                 <option key={stage.id} value={stage.id}>
                   {stage.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Responsável
+            </label>
+            <select
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+            >
+              <option value="">Nenhum</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
                 </option>
               ))}
             </select>
@@ -860,6 +882,7 @@ export function CompanyTimeline() {
   const [activeTab, setActiveTab] = useState("timeline");
   const [stages, setStages] = useState([]);
   const [channels, setChannels] = useState([]);
+  const [agents, setAgents] = useState<api.AgentWithChannels[]>([]);
   const [showOpportunityModal, setShowOpportunityModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
 
@@ -868,17 +891,19 @@ export function CompanyTimeline() {
     setLoading(true);
 
     try {
-      const [companyData, timelineData, stagesData, channelsData] =
+      const [companyData, timelineData, stagesData, channelsData, agentsData] =
         await Promise.all([
           api.getCompany(id),
           api.getCompanyTimeline(id),
           api.getStages(),
           api.getChannels(),
+          api.getAgents(),
         ]);
       setCompany(companyData);
       setTimeline(timelineData);
       setStages(stagesData);
       setChannels(channelsData);
+      setAgents(agentsData);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
     } finally {
@@ -982,7 +1007,11 @@ export function CompanyTimeline() {
 
           <SidebarSection title="Oportunidades">
             {company.opportunities.map((opp) => (
-              <div key={opp.id} className="py-2 text-sm">
+              <a
+                key={opp.id}
+                href={`/opportunities/${opp.id}`}
+                className="py-2 text-sm block hover:bg-gray-50 rounded px-1 -mx-1 transition-colors"
+              >
                 <div className="flex justify-between">
                   <span className="text-gray-600">
                     {opp.stage?.name || "Sem estágio"}
@@ -994,7 +1023,7 @@ export function CompanyTimeline() {
                 {opp.agent && (
                   <p className="text-xs text-gray-500">{opp.agent.name}</p>
                 )}
-              </div>
+              </a>
             ))}
             {company.opportunities.length === 0 && (
               <p className="text-sm text-gray-500">Nenhuma oportunidade</p>
@@ -1173,9 +1202,10 @@ export function CompanyTimeline() {
                 ) : (
                   <div className="divide-y divide-gray-100">
                     {company.opportunities.map((opp) => (
-                      <div
+                      <a
                         key={opp.id}
-                        className="p-4 flex items-center justify-between"
+                        href={`/opportunities/${opp.id}`}
+                        className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
                       >
                         <div>
                           <p className="font-medium text-gray-800">
@@ -1188,7 +1218,7 @@ export function CompanyTimeline() {
                         <span className="font-semibold text-green-600">
                           {formatCurrency(opp.estimatedValue)}
                         </span>
-                      </div>
+                      </a>
                     ))}
                   </div>
                 )}
@@ -1205,6 +1235,7 @@ export function CompanyTimeline() {
         onCreated={fetchData}
         companyId={id}
         stages={stages}
+        agents={agents}
       />
       <CreateContactModal
         isOpen={showContactModal}

@@ -60,9 +60,11 @@ const CreateOpportunityModal = ({
   onCreated,
   companies,
   stages,
+  agents,
 }) => {
   const [companyId, setCompanyId] = useState("");
   const [stageId, setStageId] = useState("");
+  const [agentId, setAgentId] = useState("");
   const [estimatedValue, setEstimatedValue] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -83,12 +85,14 @@ const CreateOpportunityModal = ({
       await api.createOpportunity({
         companyId,
         stageId,
+        agentId: agentId || undefined,
         estimatedValue: estimatedValue ? parseFloat(estimatedValue) : undefined,
         notes: notes || undefined,
       });
       onCreated();
       onClose();
       setCompanyId("");
+      setAgentId("");
       setEstimatedValue("");
       setNotes("");
     } catch (err) {
@@ -156,6 +160,24 @@ const CreateOpportunityModal = ({
               {stages.map((stage) => (
                 <option key={stage.id} value={stage.id}>
                   {stage.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Responsável
+            </label>
+            <select
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+            >
+              <option value="">Nenhum</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
                 </option>
               ))}
             </select>
@@ -250,20 +272,23 @@ export function OpportunitiesPage() {
   const [showModal, setShowModal] = useState(false);
   const [companies, setCompanies] = useState([]);
   const [stages, setStages] = useState([]);
+  const [agents, setAgents] = useState<api.AgentWithChannels[]>([]);
   const [filterStage, setFilterStage] = useState("");
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [kanbanResponse, companiesResponse, stagesResponse] =
+      const [kanbanResponse, companiesResponse, stagesResponse, agentsResponse] =
         await Promise.all([
           api.getOpportunitiesKanban(),
           api.getCompanies({ limit: 1000 }),
           api.getStages(),
+          api.getAgents(),
         ]);
       setKanbanData(kanbanResponse.columns);
       setCompanies(companiesResponse.companies);
       setStages(stagesResponse);
+      setAgents(agentsResponse);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
     } finally {
@@ -276,7 +301,7 @@ export function OpportunitiesPage() {
   }, []);
 
   const handleOpportunityClick = (opportunity) => {
-    window.location.href = `/company/${opportunity.company.id}`;
+    window.location.href = `/opportunities/${opportunity.id}`;
   };
 
   const handleDragStart = (e, opportunityId, fromStageId) => {
@@ -445,6 +470,7 @@ export function OpportunitiesPage() {
         onCreated={fetchData}
         companies={companies}
         stages={stages}
+        agents={agents}
       />
     </div>
   );

@@ -89,11 +89,12 @@ export async function stagesRoutes(app: FastifyInstance) {
    * GET /stages/:id
    * Busca um stage por ID
    */
-  app.get("/:id", async (request, reply) => {
+  app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = stageParamsSchema.parse(request.params);
 
-    const stage = await prisma.stage.findUnique({
-      where: { id },
+    const stage = await prisma.stage.findFirst({
+      where: { id, operationId: user.operationId },
       include: {
         operation: { select: { id: true, name: true } },
         _count: { select: { opportunities: true } },
@@ -111,22 +112,22 @@ export async function stagesRoutes(app: FastifyInstance) {
    * POST /stages
    * Cria um novo stage
    */
-  app.post("/", async (request, reply) => {
+  app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = createStageSchema.parse(request.body);
 
-    // Verifica se operation existe
-    const operation = await prisma.operation.findUnique({
-      where: { id: body.operationId },
-    });
-    if (!operation) {
-      return reply.status(404).send({ error: "Operation não encontrada" });
+    if (!user.operationId) {
+      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
     }
+
+    // Usa a operation do usuário (ignora body.operationId)
+    const operationId = user.operationId;
 
     // Se não forneceu order, coloca no final
     let order = body.order;
     if (order === undefined) {
       const lastStage = await prisma.stage.findFirst({
-        where: { operationId: body.operationId },
+        where: { operationId },
         orderBy: { order: "desc" },
       });
       order = (lastStage?.order ?? -1) + 1;
@@ -144,7 +145,7 @@ export async function stagesRoutes(app: FastifyInstance) {
       data: {
         name: body.name,
         slug,
-        operationId: body.operationId,
+        operationId,
         order,
         color: body.color,
         promptCondition: body.promptCondition,
@@ -162,11 +163,12 @@ export async function stagesRoutes(app: FastifyInstance) {
    * PUT /stages/:id
    * Atualiza um stage
    */
-  app.put("/:id", async (request, reply) => {
+  app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = stageParamsSchema.parse(request.params);
     const body = updateStageSchema.parse(request.body);
 
-    const existing = await prisma.stage.findUnique({ where: { id } });
+    const existing = await prisma.stage.findFirst({ where: { id, operationId: user.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Stage não encontrado" });
     }
@@ -186,22 +188,22 @@ export async function stagesRoutes(app: FastifyInstance) {
    * POST /stages/reorder
    * Reordena os stages de uma operation
    */
-  app.post("/reorder", async (request, reply) => {
+  app.post("/reorder", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = reorderStagesSchema.parse(request.body);
 
-    // Verifica se operation existe
-    const operation = await prisma.operation.findUnique({
-      where: { id: body.operationId },
-    });
-    if (!operation) {
-      return reply.status(404).send({ error: "Operation não encontrada" });
+    if (!user.operationId) {
+      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
     }
 
-    // Atualiza a ordem de cada stage
+    // Usa a operation do usuário
+    const operationId = user.operationId;
+
+    // Atualiza a ordem de cada stage (apenas stages da operação)
     await prisma.$transaction(
       body.stageIds.map((stageId, index) =>
-        prisma.stage.update({
-          where: { id: stageId },
+        prisma.stage.updateMany({
+          where: { id: stageId, operationId },
           data: { order: index },
         })
       )
@@ -209,7 +211,7 @@ export async function stagesRoutes(app: FastifyInstance) {
 
     // Retorna os stages atualizados
     const stages = await prisma.stage.findMany({
-      where: { operationId: body.operationId },
+      where: { operationId },
       orderBy: { order: "asc" },
     });
 
@@ -220,10 +222,11 @@ export async function stagesRoutes(app: FastifyInstance) {
    * DELETE /stages/:id
    * Remove um stage
    */
-  app.delete("/:id", async (request, reply) => {
+  app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = stageParamsSchema.parse(request.params);
 
-    const existing = await prisma.stage.findUnique({ where: { id } });
+    const existing = await prisma.stage.findFirst({ where: { id, operationId: user.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Stage não encontrado" });
     }

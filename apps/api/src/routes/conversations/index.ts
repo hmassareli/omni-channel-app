@@ -60,10 +60,6 @@ export async function conversationsRoutes(app: FastifyInstance) {
       where.contactId = query.contactId;
     }
 
-    if (query.operationId) {
-      where.channel = { operationId: query.operationId };
-    }
-
     if (query.needsAnalysis !== undefined) {
       where.needsAnalysis = query.needsAnalysis;
     }
@@ -104,11 +100,12 @@ export async function conversationsRoutes(app: FastifyInstance) {
    * GET /conversations/:id
    * Busca uma conversa por ID com detalhes
    */
-  app.get("/:id", async (request, reply) => {
+  app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = conversationParamsSchema.parse(request.params);
 
-    const conversation = await prisma.conversation.findUnique({
-      where: { id },
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, channel: { operationId: user.operationId } },
       include: {
         contact: {
           include: {
@@ -138,12 +135,13 @@ export async function conversationsRoutes(app: FastifyInstance) {
    * GET /conversations/:id/messages
    * Retorna as mensagens de uma conversa
    */
-  app.get("/:id/messages", async (request, reply) => {
+  app.get("/:id/messages", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = conversationParamsSchema.parse(request.params);
     const query = messagesQuerySchema.parse(request.query);
 
-    const conversation = await prisma.conversation.findUnique({
-      where: { id },
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, channel: { operationId: user.operationId } },
     });
     if (!conversation) {
       return reply.status(404).send({ error: "Conversa não encontrada" });
@@ -181,11 +179,12 @@ export async function conversationsRoutes(app: FastifyInstance) {
    * POST /conversations/:id/analyze
    * Força a análise de uma conversa
    */
-  app.post("/:id/analyze", async (request, reply) => {
+  app.post("/:id/analyze", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = conversationParamsSchema.parse(request.params);
 
-    const conversation = await prisma.conversation.findUnique({
-      where: { id },
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, channel: { operationId: user.operationId } },
     });
     if (!conversation) {
       return reply.status(404).send({ error: "Conversa não encontrada" });

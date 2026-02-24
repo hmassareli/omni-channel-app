@@ -143,6 +143,25 @@ export async function operationsRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Operation não encontrada" });
     }
 
+    // Se está marcando onboarding como completo, cria stages padrão (se não existirem)
+    if (body.onboardingCompleted && !existing.onboardingCompleted) {
+      const existingStages = await prisma.stage.count({ where: { operationId: id } });
+      if (existingStages === 0) {
+        const defaultStages = [
+          { name: "Suspect", slug: "suspect", order: 0, color: "#94a3b8" },
+          { name: "Prospect", slug: "prospect", order: 1, color: "#6366f1" },
+          { name: "Mapeamento", slug: "mapeamento", order: 2, color: "#8b5cf6" },
+          { name: "Demonstração", slug: "demonstracao", order: 3, color: "#a855f7" },
+          { name: "Negociação", slug: "negociacao", order: 4, color: "#d946ef" },
+          { name: "Fechamento", slug: "fechamento", order: 5, color: "#22c55e" },
+        ];
+        await prisma.stage.createMany({
+          data: defaultStages.map((s) => ({ ...s, operationId: id })),
+        });
+        console.log(`[Operations] Criados ${defaultStages.length} stages padrão para operation ${id}`);
+      }
+    }
+
     const operation = await prisma.operation.update({
       where: { id },
       data: body,

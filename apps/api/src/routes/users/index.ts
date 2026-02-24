@@ -67,11 +67,12 @@ export async function usersRoutes(app: FastifyInstance) {
    * GET /users/:id
    * Busca um usuário por ID
    */
-  app.get("/:id", async (request, reply) => {
+  app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const requester = request.user!;
     const { id } = userParamsSchema.parse(request.params);
 
-    const user = await prisma.user.findUnique({
-      where: { id },
+    const user = await prisma.user.findFirst({
+      where: { id, operationId: requester.operationId },
       include: {
         operation: { select: { id: true, name: true } },
         agent: {
@@ -95,8 +96,13 @@ export async function usersRoutes(app: FastifyInstance) {
    * POST /users
    * Cria um novo usuário
    */
-  app.post("/", async (request, reply) => {
+  app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const requester = request.user!;
     const body = createUserSchema.parse(request.body);
+
+    if (!requester.operationId) {
+      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
+    }
 
     // Verifica se email já existe
     const existingEmail = await prisma.user.findUnique({
@@ -106,22 +112,12 @@ export async function usersRoutes(app: FastifyInstance) {
       return reply.status(409).send({ error: "Email já cadastrado" });
     }
 
-    // Verifica se operation existe (se fornecida)
-    if (body.operationId) {
-      const operation = await prisma.operation.findUnique({
-        where: { id: body.operationId },
-      });
-      if (!operation) {
-        return reply.status(404).send({ error: "Operation não encontrada" });
-      }
-    }
-
     const user = await prisma.user.create({
       data: {
         email: body.email,
         name: body.name,
         role: body.role,
-        operationId: body.operationId,
+        operationId: requester.operationId,
       },
       include: {
         operation: { select: { id: true, name: true } },
@@ -135,11 +131,12 @@ export async function usersRoutes(app: FastifyInstance) {
    * PUT /users/:id
    * Atualiza um usuário
    */
-  app.put("/:id", async (request, reply) => {
+  app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const requester = request.user!;
     const { id } = userParamsSchema.parse(request.params);
     const body = updateUserSchema.parse(request.body);
 
-    const existing = await prisma.user.findUnique({ where: { id } });
+    const existing = await prisma.user.findFirst({ where: { id, operationId: requester.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Usuário não encontrado" });
     }
@@ -154,9 +151,12 @@ export async function usersRoutes(app: FastifyInstance) {
       }
     }
 
+    // Remove operationId do body para evitar troca de operação
+    const { operationId: _ignore, ...safeBody } = body;
+
     const user = await prisma.user.update({
       where: { id },
-      data: body,
+      data: safeBody,
       include: {
         operation: { select: { id: true, name: true } },
       },
@@ -169,10 +169,11 @@ export async function usersRoutes(app: FastifyInstance) {
    * DELETE /users/:id
    * Remove um usuário
    */
-  app.delete("/:id", async (request, reply) => {
+  app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const requester = request.user!;
     const { id } = userParamsSchema.parse(request.params);
 
-    const existing = await prisma.user.findUnique({ where: { id } });
+    const existing = await prisma.user.findFirst({ where: { id, operationId: requester.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Usuário não encontrado" });
     }

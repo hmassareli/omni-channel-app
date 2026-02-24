@@ -142,16 +142,24 @@ const updateCompanySchema = z.object({
 // ============================================================================
 
 export async function companiesRoutes(app: FastifyInstance) {
+
   app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const query = companyQuerySchema.parse(request.query);
 
-    const where: Prisma.CompanyWhereInput = {};
+    const where: Prisma.CompanyWhereInput = {
+      operationId: user.operationId,
+    };
 
     if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: "insensitive" } },
-        { alias: { contains: query.search, mode: "insensitive" } },
-        { taxId: { contains: query.search } },
+      where.AND = [
+        {
+          OR: [
+            { name: { contains: query.search, mode: "insensitive" } },
+            { alias: { contains: query.search, mode: "insensitive" } },
+            { taxId: { contains: query.search } },
+          ],
+        },
       ];
     }
 
@@ -180,11 +188,13 @@ export async function companiesRoutes(app: FastifyInstance) {
   });
 
   app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = createCompanySchema.parse(request.body);
     const cleanCnpj = body.cnpj.replace(/\D/g, "");
 
-    const existing = await prisma.company.findUnique({
-      where: { taxId: cleanCnpj },
+    // Verifica se já existe para esta operation
+    const existing = await prisma.company.findFirst({
+      where: { taxId: cleanCnpj, operationId: user.operationId },
     });
 
     if (existing) {
@@ -209,17 +219,18 @@ export async function companiesRoutes(app: FastifyInstance) {
     if (body.wealthSigns) (companyData as { wealthSigns?: Record<string, unknown> }).wealthSigns = body.wealthSigns;
 
     const company = await prisma.company.create({
-      data: companyData,
+      data: { ...companyData, operationId: user.operationId },
     });
 
     return reply.status(201).send({ company });
   });
 
   app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = companyParamsSchema.parse(request.params);
 
-    const company = await prisma.company.findUnique({
-      where: { id },
+    const company = await prisma.company.findFirst({
+      where: { id, operationId: user.operationId },
       include: {
         contacts: {
           include: {
@@ -244,10 +255,11 @@ export async function companiesRoutes(app: FastifyInstance) {
   });
 
   app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = companyParamsSchema.parse(request.params);
     const body = updateCompanySchema.parse(request.body);
 
-    const existing = await prisma.company.findUnique({ where: { id } });
+    const existing = await prisma.company.findFirst({ where: { id, operationId: user.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Empresa não encontrada" });
     }
@@ -261,10 +273,11 @@ export async function companiesRoutes(app: FastifyInstance) {
   });
 
   app.post("/:id/contacts", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = companyParamsSchema.parse(request.params);
     const body = z.object({ contactId: z.uuid("ID do contato inválido") }).parse(request.body);
 
-    const company = await prisma.company.findUnique({ where: { id } });
+    const company = await prisma.company.findFirst({ where: { id, operationId: user.operationId } });
     if (!company) {
       return reply.status(404).send({ error: "Empresa não encontrada" });
     }
@@ -285,9 +298,10 @@ export async function companiesRoutes(app: FastifyInstance) {
   });
 
   app.get("/:id/timeline", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = companyParamsSchema.parse(request.params);
 
-    const company = await prisma.company.findUnique({ where: { id } });
+    const company = await prisma.company.findFirst({ where: { id, operationId: user.operationId } });
     if (!company) {
       return reply.status(404).send({ error: "Empresa não encontrada" });
     }
@@ -337,9 +351,10 @@ export async function companiesRoutes(app: FastifyInstance) {
   });
 
   app.get("/:id/insights", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = companyParamsSchema.parse(request.params);
 
-    const company = await prisma.company.findUnique({ where: { id } });
+    const company = await prisma.company.findFirst({ where: { id, operationId: user.operationId } });
     if (!company) {
       return reply.status(404).send({ error: "Empresa não encontrada" });
     }

@@ -11,7 +11,7 @@ const WAHA_API_KEY = process.env.WAHA_API_KEY;
 
 if (!WAHA_API_URL) {
   console.warn(
-    "[WAHA] WAHA_API_URL não configurada - funcionalidades WhatsApp desabilitadas"
+    "[WAHA] WAHA_API_URL não configurada - funcionalidades WhatsApp desabilitadas",
   );
 }
 
@@ -86,7 +86,7 @@ function getHeaders(): Record<string, string> {
 async function wahaRequest<T>(
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
-  body?: unknown
+  body?: unknown,
 ): Promise<T> {
   if (!WAHA_API_URL) {
     throw new Error("WAHA_API_URL não configurada");
@@ -105,7 +105,7 @@ async function wahaRequest<T>(
   if (response.statusCode >= 400) {
     const error = data as WAHAError;
     throw new Error(
-      `WAHA Error: ${error.message || error.error || "Unknown error"}`
+      `WAHA Error: ${error.message || error.error || "Unknown error"}`,
     );
   }
 
@@ -134,7 +134,7 @@ export async function getSession(sessionName: string): Promise<WAHASession> {
  * Cria uma nova sessão no WAHA
  */
 export async function createSession(
-  options: WAHASessionCreate
+  options: WAHASessionCreate,
 ): Promise<WAHASession> {
   return wahaRequest<WAHASession>("POST", "/api/sessions", options);
 }
@@ -178,7 +178,7 @@ export async function logoutSession(sessionName: string): Promise<void> {
  */
 export async function getQRCode(
   sessionName: string,
-  format: "image" | "raw" = "image"
+  format: "image" | "raw" = "image",
 ): Promise<WAHAQRCode> {
   if (!WAHA_API_URL) {
     throw new Error("WAHA_API_URL não configurada");
@@ -196,7 +196,7 @@ export async function getQRCode(
     try {
       const error = (await response.body.json()) as WAHAError;
       throw new Error(
-        `WAHA Error: ${error.message || error.error || "Unknown error"}`
+        `WAHA Error: ${error.message || error.error || "Unknown error"}`,
       );
     } catch {
       throw new Error(`WAHA Error: HTTP ${response.statusCode}`);
@@ -217,7 +217,6 @@ export async function getQRCode(
     return (await response.body.json()) as WAHAQRCode;
   }
 }
-
 
 // ============================================================================
 // Session Status Helpers
@@ -258,7 +257,7 @@ export async function waitForStatus(
   sessionName: string,
   targetStatus: WAHASessionStatus,
   timeoutMs = 60000,
-  pollIntervalMs = 2000
+  pollIntervalMs = 2000,
 ): Promise<WAHASession> {
   const startTime = Date.now();
 
@@ -277,7 +276,7 @@ export async function waitForStatus(
   }
 
   throw new Error(
-    `Timeout aguardando status ${targetStatus} para sessão ${sessionName}`
+    `Timeout aguardando status ${targetStatus} para sessão ${sessionName}`,
   );
 }
 
@@ -291,7 +290,7 @@ export async function waitForStatus(
 export async function configureWebhooks(
   sessionName: string,
   webhookUrl: string,
-  events: string[] = ["message", "session.status"]
+  events: string[] = ["message", "session.status"],
 ): Promise<void> {
   await wahaRequest("PUT", `/api/sessions/${sessionName}`, {
     config: {
@@ -343,9 +342,15 @@ export interface GetChatsOptions {
  * Retorna id, name, picture, lastMessage
  */
 export async function getChatsOverview(
-  options: GetChatsOptions
+  options: GetChatsOptions,
 ): Promise<WAHAChatOverview[]> {
-  const { sessionName, limit, offset, sortBy = "messageTimestamp", sortOrder = "desc" } = options;
+  const {
+    sessionName,
+    limit,
+    offset,
+    sortBy = "messageTimestamp",
+    sortOrder = "desc",
+  } = options;
   const params = new URLSearchParams();
   if (limit !== undefined) params.set("limit", String(limit));
   if (offset !== undefined) params.set("offset", String(offset));
@@ -355,7 +360,7 @@ export async function getChatsOverview(
 
   return wahaRequest<WAHAChatOverview[]>(
     "GET",
-    `/api/${sessionName}/chats/overview?${query}`
+    `/api/${sessionName}/chats/overview?${query}`,
   );
 }
 
@@ -365,12 +370,12 @@ export async function getChatsOverview(
 export async function getChatMessages(
   sessionName: string,
   chatId: string,
-  limit: number = 100
+  limit: number = 100,
 ): Promise<unknown[]> {
   const encodedChatId = encodeURIComponent(chatId);
   return wahaRequest<unknown[]>(
     "GET",
-    `/api/${sessionName}/chats/${encodedChatId}/messages?limit=${limit}&downloadMedia=false`
+    `/api/${sessionName}/chats/${encodedChatId}/messages?limit=${limit}&downloadMedia=false`,
   );
 }
 
@@ -384,7 +389,7 @@ export interface SendMessageOptions {
  * Envia uma mensagem de texto
  */
 export async function sendTextMessage(
-  options: SendMessageOptions
+  options: SendMessageOptions,
 ): Promise<{ id: string }> {
   return wahaRequest<{ id: string }>("POST", `/api/sendText`, {
     chatId: options.chatId,
@@ -417,11 +422,9 @@ export async function getLabels(sessionName: string): Promise<WAHALabel[]> {
 export async function addLabelToChat(
   sessionName: string,
   chatId: string,
-  labelId: string
+  labelId: string,
 ): Promise<void> {
   await wahaRequest("PUT", `/api/${sessionName}/labels/chat/${chatId}`, {
     labels: [{ id: labelId }],
   });
 }
-
-

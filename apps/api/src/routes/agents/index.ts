@@ -66,11 +66,12 @@ export async function agentsRoutes(app: FastifyInstance) {
    * GET /agents/:id
    * Busca um agente por ID
    */
-  app.get("/:id", async (request, reply) => {
+  app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = agentParamsSchema.parse(request.params);
 
-    const agent = await prisma.agent.findUnique({
-      where: { id },
+    const agent = await prisma.agent.findFirst({
+      where: { id, operationId: user.operationId },
       include: {
         operation: { select: { id: true, name: true } },
         user: { select: { id: true, name: true, email: true, role: true } },
@@ -94,27 +95,29 @@ export async function agentsRoutes(app: FastifyInstance) {
    * POST /agents
    * Cria um novo agente
    */
-  app.post("/", async (request, reply) => {
+  app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = createAgentSchema.parse(request.body);
 
-    // Verifica se operation existe
-    const operation = await prisma.operation.findUnique({
-      where: { id: body.operationId },
-    });
-    if (!operation) {
-      return reply.status(404).send({ error: "Operation não encontrada" });
+    if (!user.operationId) {
+      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
     }
+
+    const operationId = user.operationId;
 
     // Verifica se user existe e não está vinculado a outro agent (se fornecido)
     if (body.userId) {
-      const user = await prisma.user.findUnique({
+      const targetUser = await prisma.user.findUnique({
         where: { id: body.userId },
         include: { agent: true },
       });
-      if (!user) {
+      if (!targetUser) {
         return reply.status(404).send({ error: "Usuário não encontrado" });
       }
-      if (user.agent) {
+      if (targetUser.operationId !== user.operationId) {
+        return reply.status(403).send({ error: "Usuário não pertence à sua operação" });
+      }
+      if (targetUser.agent) {
         return reply
           .status(409)
           .send({ error: "Usuário já vinculado a outro agente" });
@@ -124,7 +127,7 @@ export async function agentsRoutes(app: FastifyInstance) {
     const agent = await prisma.agent.create({
       data: {
         name: body.name,
-        operationId: body.operationId,
+        operationId,
         userId: body.userId,
         avatarUrl: body.avatarUrl,
       },
@@ -141,11 +144,12 @@ export async function agentsRoutes(app: FastifyInstance) {
    * PUT /agents/:id
    * Atualiza um agente
    */
-  app.put("/:id", async (request, reply) => {
+  app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = agentParamsSchema.parse(request.params);
     const body = updateAgentSchema.parse(request.body);
 
-    const existing = await prisma.agent.findUnique({ where: { id } });
+    const existing = await prisma.agent.findFirst({ where: { id, operationId: user.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Agente não encontrado" });
     }
@@ -182,10 +186,11 @@ export async function agentsRoutes(app: FastifyInstance) {
    * DELETE /agents/:id
    * Remove um agente
    */
-  app.delete("/:id", async (request, reply) => {
+  app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = agentParamsSchema.parse(request.params);
 
-    const existing = await prisma.agent.findUnique({ where: { id } });
+    const existing = await prisma.agent.findFirst({ where: { id, operationId: user.operationId } });
     if (!existing) {
       return reply.status(404).send({ error: "Agente não encontrado" });
     }

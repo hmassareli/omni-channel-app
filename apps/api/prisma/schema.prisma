@@ -89,6 +89,10 @@ model Company {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // Tenant
+  operationId String?
+  operation   Operation? @relation(fields: [operationId], references: [id], onDelete: SetNull)
+
   // Relacionamentos
   contacts    Contact[]
   opportunities Opportunity[]
@@ -273,6 +277,7 @@ model Operation {
   updatedAt DateTime @updatedAt
 
   channels           Channel[]
+  companies          Company[]
   tags               Tag[]
   insightDefinitions InsightDefinition[]
   stages             Stage[]

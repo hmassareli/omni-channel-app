@@ -207,6 +207,7 @@ export async function contactsRoutes(app: FastifyInstance) {
    * - Vinculo com Company
    */
   app.post("/link-whatsapp", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = linkWhatsAppChatSchema.parse(request.body);
 
     // Verifica se a empresa existe
@@ -215,9 +216,9 @@ export async function contactsRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Empresa não encontrada" });
     }
 
-    // Verifica se o channel existe
-    const channel = await prisma.channel.findUnique({ 
-      where: { id: body.channelId },
+    // Verifica se o channel pertence à operação do usuário
+    const channel = await prisma.channel.findFirst({ 
+      where: { id: body.channelId, operationId: user.operationId },
       include: { whatsappDetails: true },
     });
     if (!channel) {
@@ -328,11 +329,15 @@ export async function contactsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/:id", async (request, reply) => {
+  app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = contactParamsSchema.parse(request.params);
 
-    const contact = await prisma.contact.findUnique({
-      where: { id },
+    const contact = await prisma.contact.findFirst({
+      where: {
+        id,
+        conversations: { some: { channel: { operationId: user.operationId } } },
+      },
       include: {
         identities: true,
         tags: {
@@ -360,11 +365,14 @@ export async function contactsRoutes(app: FastifyInstance) {
     return reply.send({ contact });
   });
 
-  app.put("/:id", async (request, reply) => {
+  app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = contactParamsSchema.parse(request.params);
     const body = updateContactSchema.parse(request.body);
 
-    const existing = await prisma.contact.findUnique({ where: { id } });
+    const existing = await prisma.contact.findFirst({
+      where: { id, conversations: { some: { channel: { operationId: user.operationId } } } },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Contato não encontrado" });
     }
@@ -377,16 +385,22 @@ export async function contactsRoutes(app: FastifyInstance) {
     return reply.send({ contact });
   });
 
-  app.post("/:id/tags", async (request, reply) => {
+  app.post("/:id/tags", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = contactParamsSchema.parse(request.params);
     const body = addTagSchema.parse(request.body);
 
-    const contact = await prisma.contact.findUnique({ where: { id } });
+    const contact = await prisma.contact.findFirst({
+      where: { id, conversations: { some: { channel: { operationId: user.operationId } } } },
+    });
     if (!contact) {
       return reply.status(404).send({ error: "Contato não encontrado" });
     }
 
-    const tag = await prisma.tag.findUnique({ where: { id: body.tagId } });
+    // Verifica se a tag pertence à operação do usuário
+    const tag = await prisma.tag.findFirst({
+      where: { id: body.tagId, operationId: user.operationId },
+    });
     if (!tag) {
       return reply.status(404).send({ error: "Tag não encontrada" });
     }
@@ -410,7 +424,7 @@ export async function contactsRoutes(app: FastifyInstance) {
     return reply.status(201).send({ success: true });
   });
 
-  app.delete("/:id/tags", async (request, reply) => {
+  app.delete("/:id/tags", { preHandler: authMiddleware }, async (request, reply) => {
     const { id } = contactParamsSchema.parse(request.params);
     const body = removeTagSchema.parse(request.body);
 
@@ -428,7 +442,8 @@ export async function contactsRoutes(app: FastifyInstance) {
     return reply.status(204).send();
   });
 
-  app.get("/:id/timeline", async (request, reply) => {
+  app.get("/:id/timeline", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const { id } = contactParamsSchema.parse(request.params);
 
     const timelineQuery = z.object({
@@ -437,7 +452,9 @@ export async function contactsRoutes(app: FastifyInstance) {
     });
     const query = timelineQuery.parse(request.query);
 
-    const contact = await prisma.contact.findUnique({ where: { id } });
+    const contact = await prisma.contact.findFirst({
+      where: { id, conversations: { some: { channel: { operationId: user.operationId } } } },
+    });
     if (!contact) {
       return reply.status(404).send({ error: "Contato não encontrado" });
     }

@@ -59,11 +59,11 @@ export type IngestResult =
   | { skipped?: false; conversationId: string; messageId: string };
 
 export async function ingestWhatsappMessage(
-  payload: WhatsappWebhookPayload
+  payload: WhatsappWebhookPayload,
 ): Promise<IngestResult> {
   const parsed = whatsappWebhookSchema.parse(payload);
   const envelope = webhookBodySchema.parse(
-    "body" in parsed ? parsed.body : parsed
+    "body" in parsed ? parsed.body : parsed,
   );
   const { me, payload: messagePayload, session: sessionName } = envelope;
 
@@ -98,7 +98,7 @@ export async function ingestWhatsappMessage(
     : MessageDirection.INBOUND;
 
   const rawContactId = messagePayload.fromMe
-    ? messagePayload.to ?? messagePayload.chatId
+    ? (messagePayload.to ?? messagePayload.chatId)
     : messagePayload.from;
 
   let contactWaId = sanitizeWaId(rawContactId);
@@ -122,7 +122,9 @@ export async function ingestWhatsappMessage(
     if (contactWaId !== originalLid) {
       console.log(`[Ingest] LID ${originalLid} → ${contactWaId}`);
     } else {
-      console.warn(`[Ingest] LID ${originalLid} não resolvido — armazenado como LID`);
+      console.warn(
+        `[Ingest] LID ${originalLid} não resolvido — armazenado como LID`,
+      );
     }
   }
 
@@ -146,14 +148,16 @@ export async function ingestWhatsappMessage(
 
     if (whatsappChannel) {
       channel = whatsappChannel.channel;
-      
+
       // Atualiza o externalIdentifier para facilitar buscas futuras
       await prisma.channel.update({
         where: { id: channel.id },
         data: { externalIdentifier: channelIdentifier },
       });
-      
-      console.log(`[Ingest] Channel ${channel.name} atualizado com externalIdentifier: ${channelIdentifier}`);
+
+      console.log(
+        `[Ingest] Channel ${channel.name} atualizado com externalIdentifier: ${channelIdentifier}`,
+      );
     }
   }
 
@@ -245,7 +249,7 @@ export async function ingestWhatsappMessage(
     const conversationUpdate = await updateConversationTimestamps(
       conversation,
       direction,
-      sentAt
+      sentAt,
     );
 
     await prisma.timelineEvent.create({
@@ -352,11 +356,11 @@ function resolveContent(payload: z.infer<typeof payloadSchema>): string {
 }
 
 function shouldSkipMessage(
-  payload: z.infer<typeof payloadSchema>
+  payload: z.infer<typeof payloadSchema>,
 ): string | null {
   const hasContent = Boolean(
     (payload.body && payload.body.trim().length > 0) ||
-      toBoolean(payload.hasMedia)
+    toBoolean(payload.hasMedia),
   );
 
   if (!hasContent) {
@@ -365,10 +369,9 @@ function shouldSkipMessage(
 
   const isGroupChat = Boolean(
     payload.participant ||
-      payload.isDefaultSubgroup !== undefined ||
-      (payload.id &&
-        (payload.id.includes("@newsletter") ||
-          payload.id.includes("broadcast")))
+    payload.isDefaultSubgroup !== undefined ||
+    (payload.id &&
+      (payload.id.includes("@newsletter") || payload.id.includes("broadcast"))),
   );
 
   if (isGroupChat) {
@@ -381,7 +384,7 @@ function shouldSkipMessage(
 async function updateConversationTimestamps(
   conversation: Awaited<ReturnType<typeof prisma.conversation.findFirst>>,
   direction: MessageDirection,
-  sentAt: Date
+  sentAt: Date,
 ) {
   if (!conversation) {
     throw new Error("Conversation not found while updating timestamps");
@@ -434,7 +437,7 @@ async function updateConversationTimestamps(
     data.firstResponseAt = sentAt;
     data.timeToFirstInteraction = Math.max(
       0,
-      Math.round((sentAt.getTime() - firstInbound.getTime()) / 1000)
+      Math.round((sentAt.getTime() - firstInbound.getTime()) / 1000),
     );
   }
 

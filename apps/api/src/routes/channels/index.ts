@@ -483,7 +483,11 @@ export async function channelsRoutes(app: FastifyInstance) {
         const sessionName = channel.whatsappDetails.sessionName;
         const batchSize = query.limit * 2;
 
-        const firstBatch = await waha.getChatsOverview({ sessionName, limit: batchSize, offset: query.offset });
+        const firstBatch = await waha.getChatsOverview({
+          sessionName,
+          limit: batchSize,
+          offset: query.offset,
+        });
 
         // LID → telefone: extraído do _data.Info.RecipientAlt das próprias mensagens
         const lidToPhone = new Map<string, string>();
@@ -503,14 +507,20 @@ export async function channelsRoutes(app: FastifyInstance) {
               // Extrai mapeamento LID do _data da própria mensagem
               const recipAlt = chat.lastMessage?._data?.Info?.RecipientAlt;
               if (recipAlt?.endsWith("@lid")) {
-                lidToPhone.set(recipAlt.replace(/@lid$/, ""), chat.id.replace("@c.us", ""));
+                lidToPhone.set(
+                  recipAlt.replace(/@lid$/, ""),
+                  chat.id.replace("@c.us", ""),
+                );
               }
             } else if (chat.id.endsWith("@lid")) {
               lidChats.push(chat);
               // Extrai mapeamento phone do _data da própria mensagem
               const recipAlt = chat.lastMessage?._data?.Info?.RecipientAlt;
               if (recipAlt?.endsWith("@s.whatsapp.net")) {
-                lidToPhone.set(chat.id.replace(/@lid$/, ""), recipAlt.replace(/@s\.whatsapp\.net$/, ""));
+                lidToPhone.set(
+                  chat.id.replace(/@lid$/, ""),
+                  recipAlt.replace(/@s\.whatsapp\.net$/, ""),
+                );
               }
             }
           }
@@ -519,8 +529,16 @@ export async function channelsRoutes(app: FastifyInstance) {
         classifyBatch(firstBatch);
 
         // Busca mais batches até preencher o limit
-        for (let i = 0; i < 5 && directChats.length < query.limit && wahaHasMore; i++) {
-          const batch = await waha.getChatsOverview({ sessionName, limit: batchSize, offset: wahaOffset });
+        for (
+          let i = 0;
+          i < 5 && directChats.length < query.limit && wahaHasMore;
+          i++
+        ) {
+          const batch = await waha.getChatsOverview({
+            sessionName,
+            limit: batchSize,
+            offset: wahaOffset,
+          });
           classifyBatch(batch);
         }
         // Trunca ao limit pedido
@@ -528,7 +546,10 @@ export async function channelsRoutes(app: FastifyInstance) {
 
         // Enriquece lastMessage dos @c.us com o @lid correspondente (se mais recente)
         if (lidChats.length > 0) {
-          const phoneToLastMsg = new Map<string, waha.WAHAChatOverview["lastMessage"]>();
+          const phoneToLastMsg = new Map<
+            string,
+            waha.WAHAChatOverview["lastMessage"]
+          >();
           for (const lid of lidChats) {
             if (!lid.lastMessage) continue;
             const phone = lidToPhone.get(lid.id.replace(/@lid$/, ""));
@@ -540,7 +561,11 @@ export async function channelsRoutes(app: FastifyInstance) {
           }
           for (const chat of directChats) {
             const lidMsg = phoneToLastMsg.get(chat.id.replace("@c.us", ""));
-            if (lidMsg && (!chat.lastMessage || lidMsg.timestamp > chat.lastMessage.timestamp)) {
+            if (
+              lidMsg &&
+              (!chat.lastMessage ||
+                lidMsg.timestamp > chat.lastMessage.timestamp)
+            ) {
               chat.lastMessage = lidMsg;
             }
           }
