@@ -501,9 +501,7 @@ export interface OpportunityDetail extends Opportunity {
   agent: { id: string; name: string; avatarUrl: string | null } | null;
 }
 
-export async function getOpportunity(
-  id: string,
-): Promise<OpportunityDetail> {
+export async function getOpportunity(id: string): Promise<OpportunityDetail> {
   const response = await apiRequest<{ opportunity: OpportunityDetail }>(
     "GET",
     `/opportunities/${id}`,

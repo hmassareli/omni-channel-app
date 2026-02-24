@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../../prisma";
 import { authMiddleware } from "../../middleware/auth";
+import { prisma } from "../../prisma";
 
 // ============================================================================
 // Schemas
@@ -14,7 +14,7 @@ const createTagSchema = z.object({
     .min(1, "Slug é obrigatório")
     .regex(
       /^[a-z0-9-]+$/,
-      "Slug deve conter apenas letras minúsculas, números e hífens"
+      "Slug deve conter apenas letras minúsculas, números e hífens",
     )
     .optional(),
   operationId: z.string().min(1, "operationId é obrigatório"),
@@ -112,7 +112,9 @@ export async function tagsRoutes(app: FastifyInstance) {
     const body = createTagSchema.parse(request.body);
 
     if (!user.operationId) {
-      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
+      return reply
+        .status(400)
+        .send({ error: "Usuário sem operação vinculada" });
     }
 
     const operationId = user.operationId;
@@ -163,7 +165,9 @@ export async function tagsRoutes(app: FastifyInstance) {
     const { id } = tagParamsSchema.parse(request.params);
     const body = updateTagSchema.parse(request.body);
 
-    const existing = await prisma.tag.findFirst({ where: { id, operationId: user.operationId } });
+    const existing = await prisma.tag.findFirst({
+      where: { id, operationId: user.operationId },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Tag não encontrada" });
     }
@@ -203,7 +207,9 @@ export async function tagsRoutes(app: FastifyInstance) {
     const user = request.user!;
     const { id } = tagParamsSchema.parse(request.params);
 
-    const existing = await prisma.tag.findFirst({ where: { id, operationId: user.operationId } });
+    const existing = await prisma.tag.findFirst({
+      where: { id, operationId: user.operationId },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Tag não encontrada" });
     }

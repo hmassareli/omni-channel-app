@@ -52,10 +52,7 @@ function formatCurrency(value: number | null | undefined): string {
 
 function formatCNPJ(cnpj: string | null | undefined): string {
   if (!cnpj) return "—";
-  return cnpj.replace(
-    /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
-    "$1.$2.$3/$4-$5",
-  );
+  return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
 }
 
 // ============================================================================
@@ -83,9 +80,7 @@ const OpportunityHeader = ({
     </div>
     <div className="flex-1">
       <h1 className="text-xl font-semibold text-gray-800">{companyName}</h1>
-      <span className="text-sm text-gray-500">
-        CNPJ: {formatCNPJ(cnpj)}
-      </span>
+      <span className="text-sm text-gray-500">CNPJ: {formatCNPJ(cnpj)}</span>
     </div>
   </div>
 );
@@ -173,9 +168,7 @@ const ContactBadge = ({
       <User className="w-4 h-4 text-gray-600" />
     </div>
     <div>
-      <p className="text-sm font-medium text-gray-800">
-        {name || "Sem nome"}
-      </p>
+      <p className="text-sm font-medium text-gray-800">{name || "Sem nome"}</p>
       {role && <p className="text-xs text-gray-500">{role}</p>}
     </div>
   </div>
@@ -218,7 +211,9 @@ const TimelineMessage = ({
         <Clock className="h-3 w-3" />
         <span>{formatDate(time)}</span>
         <span>• {sender}</span>
-        {channelName && <span className="text-purple-400">• {channelName}</span>}
+        {channelName && (
+          <span className="text-purple-400">• {channelName}</span>
+        )}
       </div>
     </div>
   </div>
@@ -258,8 +253,11 @@ const TimelineEvent = ({
 
 export function OpportunityTimeline() {
   const id = getOpportunityIdFromUrl();
-  const [opportunity, setOpportunity] = useState<api.OpportunityDetail | null>(null);
-  const [timeline, setTimeline] = useState<api.OpportunityTimelineResponse | null>(null);
+  const [opportunity, setOpportunity] = useState<api.OpportunityDetail | null>(
+    null,
+  );
+  const [timeline, setTimeline] =
+    useState<api.OpportunityTimelineResponse | null>(null);
   const [stages, setStages] = useState<api.Stage[]>([]);
   const [loading, setLoading] = useState(true);
   const [movingStage, setMovingStage] = useState(false);
@@ -402,10 +400,7 @@ export function OpportunityTimeline() {
           </SidebarSection>
 
           <SidebarSection title="Oportunidade">
-            <InfoRow
-              label="Estágio"
-              value={opportunity.stage?.name || "—"}
-            />
+            <InfoRow label="Estágio" value={opportunity.stage?.name || "—"} />
             <InfoRow
               label="Valor Estimado"
               value={formatCurrency(Number(opportunity.estimatedValue) || null)}
@@ -429,10 +424,7 @@ export function OpportunityTimeline() {
               <p className="text-sm text-gray-500">Nenhum contato vinculado</p>
             ) : (
               contacts.map((contact) => (
-                <ContactBadge
-                  key={contact.id}
-                  name={contact.name}
-                />
+                <ContactBadge key={contact.id} name={contact.name} />
               ))
             )}
           </SidebarSection>
@@ -517,8 +509,7 @@ export function OpportunityTimeline() {
               <p className="text-2xl font-bold text-gray-800">
                 {timeline?.events.filter(
                   (e) =>
-                    e.type === "MESSAGE_SENT" ||
-                    e.type === "MESSAGE_RECEIVED",
+                    e.type === "MESSAGE_SENT" || e.type === "MESSAGE_RECEIVED",
                 ).length || 0}
               </p>
             </div>
@@ -536,9 +527,7 @@ export function OpportunityTimeline() {
             <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <DollarSign className="w-4 h-4 text-green-600" />
-                <span className="text-sm font-medium text-gray-700">
-                  Valor
-                </span>
+                <span className="text-sm font-medium text-gray-700">Valor</span>
               </div>
               <p className="text-2xl font-bold text-green-600">
                 {formatCurrency(Number(opportunity.estimatedValue) || null)}

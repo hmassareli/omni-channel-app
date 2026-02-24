@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../../prisma";
 import { authMiddleware } from "../../middleware/auth";
+import { prisma } from "../../prisma";
 
 // ============================================================================
 // Schemas
@@ -145,20 +145,44 @@ export async function operationsRoutes(app: FastifyInstance) {
 
     // Se está marcando onboarding como completo, cria stages padrão (se não existirem)
     if (body.onboardingCompleted && !existing.onboardingCompleted) {
-      const existingStages = await prisma.stage.count({ where: { operationId: id } });
+      const existingStages = await prisma.stage.count({
+        where: { operationId: id },
+      });
       if (existingStages === 0) {
         const defaultStages = [
           { name: "Suspect", slug: "suspect", order: 0, color: "#94a3b8" },
           { name: "Prospect", slug: "prospect", order: 1, color: "#6366f1" },
-          { name: "Mapeamento", slug: "mapeamento", order: 2, color: "#8b5cf6" },
-          { name: "Demonstração", slug: "demonstracao", order: 3, color: "#a855f7" },
-          { name: "Negociação", slug: "negociacao", order: 4, color: "#d946ef" },
-          { name: "Fechamento", slug: "fechamento", order: 5, color: "#22c55e" },
+          {
+            name: "Mapeamento",
+            slug: "mapeamento",
+            order: 2,
+            color: "#8b5cf6",
+          },
+          {
+            name: "Demonstração",
+            slug: "demonstracao",
+            order: 3,
+            color: "#a855f7",
+          },
+          {
+            name: "Negociação",
+            slug: "negociacao",
+            order: 4,
+            color: "#d946ef",
+          },
+          {
+            name: "Fechamento",
+            slug: "fechamento",
+            order: 5,
+            color: "#22c55e",
+          },
         ];
         await prisma.stage.createMany({
           data: defaultStages.map((s) => ({ ...s, operationId: id })),
         });
-        console.log(`[Operations] Criados ${defaultStages.length} stages padrão para operation ${id}`);
+        console.log(
+          `[Operations] Criados ${defaultStages.length} stages padrão para operation ${id}`,
+        );
       }
     }
 

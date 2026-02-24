@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../../prisma";
 import { authMiddleware } from "../../middleware/auth";
+import { prisma } from "../../prisma";
 
 // ============================================================================
 // Schemas
@@ -49,7 +49,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
 
     const where: Prisma.ConversationWhereInput = {
       // Filtra por operation via channel
-      channel: { operationId: user.operationId }
+      channel: { operationId: user.operationId },
     };
 
     if (query.channelId) {
@@ -135,68 +135,78 @@ export async function conversationsRoutes(app: FastifyInstance) {
    * GET /conversations/:id/messages
    * Retorna as mensagens de uma conversa
    */
-  app.get("/:id/messages", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const { id } = conversationParamsSchema.parse(request.params);
-    const query = messagesQuerySchema.parse(request.query);
+  app.get(
+    "/:id/messages",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const { id } = conversationParamsSchema.parse(request.params);
+      const query = messagesQuerySchema.parse(request.query);
 
-    const conversation = await prisma.conversation.findFirst({
-      where: { id, channel: { operationId: user.operationId } },
-    });
-    if (!conversation) {
-      return reply.status(404).send({ error: "Conversa não encontrada" });
-    }
+      const conversation = await prisma.conversation.findFirst({
+        where: { id, channel: { operationId: user.operationId } },
+      });
+      if (!conversation) {
+        return reply.status(404).send({ error: "Conversa não encontrada" });
+      }
 
-    const where: Prisma.MessageWhereInput = {
-      conversationId: id,
-    };
-
-    if (query.before) {
-      where.sentAt = {
-        ...(where.sentAt as object),
-        lt: new Date(query.before),
+      const where: Prisma.MessageWhereInput = {
+        conversationId: id,
       };
-    }
 
-    if (query.after) {
-      where.sentAt = { ...(where.sentAt as object), gt: new Date(query.after) };
-    }
+      if (query.before) {
+        where.sentAt = {
+          ...(where.sentAt as object),
+          lt: new Date(query.before),
+        };
+      }
 
-    const messages = await prisma.message.findMany({
-      where,
-      orderBy: { sentAt: "desc" },
-      take: query.limit,
-    });
+      if (query.after) {
+        where.sentAt = {
+          ...(where.sentAt as object),
+          gt: new Date(query.after),
+        };
+      }
 
-    // Retorna em ordem cronológica
-    return reply.send({
-      messages: messages.reverse(),
-      hasMore: messages.length === query.limit,
-    });
-  });
+      const messages = await prisma.message.findMany({
+        where,
+        orderBy: { sentAt: "desc" },
+        take: query.limit,
+      });
+
+      // Retorna em ordem cronológica
+      return reply.send({
+        messages: messages.reverse(),
+        hasMore: messages.length === query.limit,
+      });
+    },
+  );
 
   /**
    * POST /conversations/:id/analyze
    * Força a análise de uma conversa
    */
-  app.post("/:id/analyze", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const { id } = conversationParamsSchema.parse(request.params);
+  app.post(
+    "/:id/analyze",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const { id } = conversationParamsSchema.parse(request.params);
 
-    const conversation = await prisma.conversation.findFirst({
-      where: { id, channel: { operationId: user.operationId } },
-    });
-    if (!conversation) {
-      return reply.status(404).send({ error: "Conversa não encontrada" });
-    }
+      const conversation = await prisma.conversation.findFirst({
+        where: { id, channel: { operationId: user.operationId } },
+      });
+      if (!conversation) {
+        return reply.status(404).send({ error: "Conversa não encontrada" });
+      }
 
-    // Importa dinamicamente para evitar dependência circular
-    const { scheduleConversationAnalysis } = await import(
-      "../../services/conversation-analysis"
-    );
+      // Importa dinamicamente para evitar dependência circular
+      const { scheduleConversationAnalysis } =
+        await import("../../services/conversation-analysis");
 
-    scheduleConversationAnalysis(id);
+      scheduleConversationAnalysis(id);
 
-    return reply.send({ success: true, message: "Análise agendada" });
-  });
+      return reply.send({ success: true, message: "Análise agendada" });
+    },
+  );
 }

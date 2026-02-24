@@ -278,13 +278,17 @@ export function OpportunitiesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [kanbanResponse, companiesResponse, stagesResponse, agentsResponse] =
-        await Promise.all([
-          api.getOpportunitiesKanban(),
-          api.getCompanies({ limit: 1000 }),
-          api.getStages(),
-          api.getAgents(),
-        ]);
+      const [
+        kanbanResponse,
+        companiesResponse,
+        stagesResponse,
+        agentsResponse,
+      ] = await Promise.all([
+        api.getOpportunitiesKanban(),
+        api.getCompanies({ limit: 1000 }),
+        api.getStages(),
+        api.getAgents(),
+      ]);
       setKanbanData(kanbanResponse.columns);
       setCompanies(companiesResponse.companies);
       setStages(stagesResponse);

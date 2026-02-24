@@ -1,8 +1,8 @@
 import { Prisma, TagSource } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../../prisma";
 import { authMiddleware } from "../../middleware/auth";
+import { prisma } from "../../prisma";
 
 // ============================================================================
 // Schemas
@@ -27,15 +27,17 @@ const updateContactSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-const createContactSchema = z.object({
-  name: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().email().optional(),
-  companyId: z.uuid("companyId inválido").optional(),
-  role: z.string().optional(),
-}).refine(data => data.phone || data.email, {
-  message: "É necessário informar pelo menos um telefone ou email",
-});
+const createContactSchema = z
+  .object({
+    name: z.string().optional(),
+    phone: z.string().optional(),
+    email: z.string().email().optional(),
+    companyId: z.uuid("companyId inválido").optional(),
+    role: z.string().optional(),
+  })
+  .refine((data) => data.phone || data.email, {
+    message: "É necessário informar pelo menos um telefone ou email",
+  });
 
 const addTagSchema = z.object({
   tagId: z.uuid("tagId inválido"),
@@ -99,7 +101,9 @@ export async function contactsRoutes(app: FastifyInstance) {
           tags: {
             include: { tag: { select: { id: true, name: true, color: true } } },
           },
-          company: { select: { id: true, name: true, alias: true, taxId: true } },
+          company: {
+            select: { id: true, name: true, alias: true, taxId: true },
+          },
           _count: { select: { conversations: true, messages: true } },
         },
         orderBy: { updatedAt: "desc" },
@@ -136,14 +140,17 @@ export async function contactsRoutes(app: FastifyInstance) {
       where: {
         identities: {
           some: {
-            OR: identityConditions.map(c => ({ type: c.type as "WHATSAPP" | "EMAIL", value: c.value })),
+            OR: identityConditions.map((c) => ({
+              type: c.type as "WHATSAPP" | "EMAIL",
+              value: c.value,
+            })),
           },
         },
       },
     });
 
     if (existingContact) {
-      return reply.status(409).send({ 
+      return reply.status(409).send({
         error: "Já existe um contato com este telefone ou email",
         contact: existingContact,
       });
@@ -157,8 +164,12 @@ export async function contactsRoutes(app: FastifyInstance) {
         companyId: body.companyId,
         identities: {
           create: [
-            ...(body.phone ? [{ type: "WHATSAPP" as const, value: body.phone }] : []),
-            ...(body.email ? [{ type: "EMAIL" as const, value: body.email }] : []),
+            ...(body.phone
+              ? [{ type: "WHATSAPP" as const, value: body.phone }]
+              : []),
+            ...(body.email
+              ? [{ type: "EMAIL" as const, value: body.email }]
+              : []),
           ],
         },
       },
@@ -172,31 +183,39 @@ export async function contactsRoutes(app: FastifyInstance) {
   });
 
   // Vincular contato a uma empresa
-  app.patch("/:id/link-company", { preHandler: authMiddleware }, async (request, reply) => {
-    const { id } = contactParamsSchema.parse(request.params);
-    const { companyId } = z.object({ companyId: z.uuid() }).parse(request.body);
+  app.patch(
+    "/:id/link-company",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const { id } = contactParamsSchema.parse(request.params);
+      const { companyId } = z
+        .object({ companyId: z.uuid() })
+        .parse(request.body);
 
-    const contact = await prisma.contact.findUnique({ where: { id } });
-    if (!contact) {
-      return reply.status(404).send({ error: "Contato não encontrado" });
-    }
+      const contact = await prisma.contact.findUnique({ where: { id } });
+      if (!contact) {
+        return reply.status(404).send({ error: "Contato não encontrado" });
+      }
 
-    const company = await prisma.company.findUnique({ where: { id: companyId } });
-    if (!company) {
-      return reply.status(404).send({ error: "Empresa não encontrada" });
-    }
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+      });
+      if (!company) {
+        return reply.status(404).send({ error: "Empresa não encontrada" });
+      }
 
-    const updatedContact = await prisma.contact.update({
-      where: { id },
-      data: { companyId },
-      include: {
-        identities: true,
-        company: true,
-      },
-    });
+      const updatedContact = await prisma.contact.update({
+        where: { id },
+        data: { companyId },
+        include: {
+          identities: true,
+          company: true,
+        },
+      });
 
-    return reply.send({ contact: updatedContact });
-  });
+      return reply.send({ contact: updatedContact });
+    },
+  );
 
   /**
    * POST /contacts/link-whatsapp
@@ -206,56 +225,122 @@ export async function contactsRoutes(app: FastifyInstance) {
    * - Conversation (vinculando ao Channel)
    * - Vinculo com Company
    */
-  app.post("/link-whatsapp", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const body = linkWhatsAppChatSchema.parse(request.body);
+  app.post(
+    "/link-whatsapp",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const body = linkWhatsAppChatSchema.parse(request.body);
 
-    // Verifica se a empresa existe
-    const company = await prisma.company.findUnique({ where: { id: body.companyId } });
-    if (!company) {
-      return reply.status(404).send({ error: "Empresa não encontrada" });
-    }
+      // Verifica se a empresa existe
+      const company = await prisma.company.findUnique({
+        where: { id: body.companyId },
+      });
+      if (!company) {
+        return reply.status(404).send({ error: "Empresa não encontrada" });
+      }
 
-    // Verifica se o channel pertence à operação do usuário
-    const channel = await prisma.channel.findFirst({ 
-      where: { id: body.channelId, operationId: user.operationId },
-      include: { whatsappDetails: true },
-    });
-    if (!channel) {
-      return reply.status(404).send({ error: "Canal não encontrado" });
-    }
+      // Verifica se o channel pertence à operação do usuário
+      const channel = await prisma.channel.findFirst({
+        where: { id: body.channelId, operationId: user.operationId },
+        include: { whatsappDetails: true },
+      });
+      if (!channel) {
+        return reply.status(404).send({ error: "Canal não encontrado" });
+      }
 
-    // Verifica se já existe uma Identity com esse número
-    let identity = await prisma.identity.findUnique({
-      where: {
-        type_value: {
-          type: "WHATSAPP",
-          value: body.waId,
+      // Verifica se já existe uma Identity com esse número
+      let identity = await prisma.identity.findUnique({
+        where: {
+          type_value: {
+            type: "WHATSAPP",
+            value: body.waId,
+          },
         },
-      },
-      include: { 
-        contact: {
-          include: { company: true },
+        include: {
+          contact: {
+            include: { company: true },
+          },
         },
-      },
-    });
+      });
 
-    if (identity) {
-      // Contato já existe - apenas atualiza a empresa se não tiver
-      if (identity.contact.companyId && identity.contact.companyId !== body.companyId) {
-        return reply.status(409).send({ 
-          error: "Este contato já está vinculado a outra empresa",
-          contact: identity.contact,
+      if (identity) {
+        // Contato já existe - apenas atualiza a empresa se não tiver
+        if (
+          identity.contact.companyId &&
+          identity.contact.companyId !== body.companyId
+        ) {
+          return reply.status(409).send({
+            error: "Este contato já está vinculado a outra empresa",
+            contact: identity.contact,
+          });
+        }
+
+        // Atualiza o contato com a empresa e nome se fornecido
+        const updatedContact = await prisma.contact.update({
+          where: { id: identity.contactId },
+          data: {
+            companyId: body.companyId,
+            name: body.name || identity.contact.name,
+            role: body.role || identity.contact.role,
+          },
+          include: {
+            identities: true,
+            company: true,
+            conversations: true,
+          },
+        });
+
+        // Verifica se já existe conversation com esse channel
+        let conversation = await prisma.conversation.findFirst({
+          where: {
+            contactId: updatedContact.id,
+            channelId: body.channelId,
+          },
+        });
+
+        if (!conversation) {
+          // Cria a conversation
+          conversation = await prisma.conversation.create({
+            data: {
+              contactId: updatedContact.id,
+              channelId: body.channelId,
+              externalId: `${body.waId}@c.us`,
+              firstMessageAt: new Date(),
+              lastMessageAt: new Date(),
+              needsAnalysis: false,
+            },
+          });
+        }
+
+        return reply.send({
+          contact: updatedContact,
+          conversation,
+          created: false,
         });
       }
 
-      // Atualiza o contato com a empresa e nome se fornecido
-      const updatedContact = await prisma.contact.update({
-        where: { id: identity.contactId },
+      // Cria novo Contact + Identity + Conversation
+      const contact = await prisma.contact.create({
         data: {
+          name: body.name,
+          role: body.role,
           companyId: body.companyId,
-          name: body.name || identity.contact.name,
-          role: body.role || identity.contact.role,
+          identities: {
+            create: {
+              type: "WHATSAPP",
+              value: body.waId,
+            },
+          },
+          conversations: {
+            create: {
+              channelId: body.channelId,
+              externalId: `${body.waId}@c.us`,
+              firstMessageAt: new Date(),
+              lastMessageAt: new Date(),
+              needsAnalysis: false,
+            },
+          },
         },
         include: {
           identities: true,
@@ -264,70 +349,13 @@ export async function contactsRoutes(app: FastifyInstance) {
         },
       });
 
-      // Verifica se já existe conversation com esse channel
-      let conversation = await prisma.conversation.findFirst({
-        where: {
-          contactId: updatedContact.id,
-          channelId: body.channelId,
-        },
+      return reply.status(201).send({
+        contact,
+        conversation: contact.conversations[0],
+        created: true,
       });
-
-      if (!conversation) {
-        // Cria a conversation
-        conversation = await prisma.conversation.create({
-          data: {
-            contactId: updatedContact.id,
-            channelId: body.channelId,
-            externalId: `${body.waId}@c.us`,
-            firstMessageAt: new Date(),
-            lastMessageAt: new Date(),
-            needsAnalysis: false,
-          },
-        });
-      }
-
-      return reply.send({ 
-        contact: updatedContact,
-        conversation,
-        created: false,
-      });
-    }
-
-    // Cria novo Contact + Identity + Conversation
-    const contact = await prisma.contact.create({
-      data: {
-        name: body.name,
-        role: body.role,
-        companyId: body.companyId,
-        identities: {
-          create: {
-            type: "WHATSAPP",
-            value: body.waId,
-          },
-        },
-        conversations: {
-          create: {
-            channelId: body.channelId,
-            externalId: `${body.waId}@c.us`,
-            firstMessageAt: new Date(),
-            lastMessageAt: new Date(),
-            needsAnalysis: false,
-          },
-        },
-      },
-      include: {
-        identities: true,
-        company: true,
-        conversations: true,
-      },
-    });
-
-    return reply.status(201).send({ 
-      contact,
-      conversation: contact.conversations[0],
-      created: true,
-    });
-  });
+    },
+  );
 
   app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
     const user = request.user!;
@@ -371,7 +399,10 @@ export async function contactsRoutes(app: FastifyInstance) {
     const body = updateContactSchema.parse(request.body);
 
     const existing = await prisma.contact.findFirst({
-      where: { id, conversations: { some: { channel: { operationId: user.operationId } } } },
+      where: {
+        id,
+        conversations: { some: { channel: { operationId: user.operationId } } },
+      },
     });
     if (!existing) {
       return reply.status(404).send({ error: "Contato não encontrado" });
@@ -385,106 +416,128 @@ export async function contactsRoutes(app: FastifyInstance) {
     return reply.send({ contact });
   });
 
-  app.post("/:id/tags", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const { id } = contactParamsSchema.parse(request.params);
-    const body = addTagSchema.parse(request.body);
+  app.post(
+    "/:id/tags",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const { id } = contactParamsSchema.parse(request.params);
+      const body = addTagSchema.parse(request.body);
 
-    const contact = await prisma.contact.findFirst({
-      where: { id, conversations: { some: { channel: { operationId: user.operationId } } } },
-    });
-    if (!contact) {
-      return reply.status(404).send({ error: "Contato não encontrado" });
-    }
-
-    // Verifica se a tag pertence à operação do usuário
-    const tag = await prisma.tag.findFirst({
-      where: { id: body.tagId, operationId: user.operationId },
-    });
-    if (!tag) {
-      return reply.status(404).send({ error: "Tag não encontrada" });
-    }
-
-    const existing = await prisma.contactTag.findUnique({
-      where: { contactId_tagId: { contactId: id, tagId: body.tagId } },
-    });
-    if (existing) {
-      return reply.status(409).send({ error: "Contato já possui esta tag" });
-    }
-
-    await prisma.contactTag.create({
-      data: {
-        contactId: id,
-        tagId: body.tagId,
-        source: body.source,
-        note: body.note,
-      },
-    });
-
-    return reply.status(201).send({ success: true });
-  });
-
-  app.delete("/:id/tags", { preHandler: authMiddleware }, async (request, reply) => {
-    const { id } = contactParamsSchema.parse(request.params);
-    const body = removeTagSchema.parse(request.body);
-
-    const existing = await prisma.contactTag.findUnique({
-      where: { contactId_tagId: { contactId: id, tagId: body.tagId } },
-    });
-    if (!existing) {
-      return reply.status(404).send({ error: "Contato não possui esta tag" });
-    }
-
-    await prisma.contactTag.delete({
-      where: { contactId_tagId: { contactId: id, tagId: body.tagId } },
-    });
-
-    return reply.status(204).send();
-  });
-
-  app.get("/:id/timeline", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const { id } = contactParamsSchema.parse(request.params);
-
-    const timelineQuery = z.object({
-      limit: z.coerce.number().int().min(1).max(100).default(50),
-      offset: z.coerce.number().int().min(0).default(0),
-    });
-    const query = timelineQuery.parse(request.query);
-
-    const contact = await prisma.contact.findFirst({
-      where: { id, conversations: { some: { channel: { operationId: user.operationId } } } },
-    });
-    if (!contact) {
-      return reply.status(404).send({ error: "Contato não encontrado" });
-    }
-
-    const [events, total] = await Promise.all([
-      prisma.timelineEvent.findMany({
-        where: { contactId: id },
-        include: {
-          conversation: {
-            select: {
-              id: true,
-              channel: { select: { id: true, name: true, type: true } },
-            },
+      const contact = await prisma.contact.findFirst({
+        where: {
+          id,
+          conversations: {
+            some: { channel: { operationId: user.operationId } },
           },
         },
-        orderBy: { occurredAt: "desc" },
-        take: query.limit,
-        skip: query.offset,
-      }),
-      prisma.timelineEvent.count({ where: { contactId: id } }),
-    ]);
+      });
+      if (!contact) {
+        return reply.status(404).send({ error: "Contato não encontrado" });
+      }
 
-    return reply.send({
-      events,
-      pagination: {
-        total,
-        limit: query.limit,
-        offset: query.offset,
-        hasMore: query.offset + events.length < total,
-      },
-    });
-  });
+      // Verifica se a tag pertence à operação do usuário
+      const tag = await prisma.tag.findFirst({
+        where: { id: body.tagId, operationId: user.operationId },
+      });
+      if (!tag) {
+        return reply.status(404).send({ error: "Tag não encontrada" });
+      }
+
+      const existing = await prisma.contactTag.findUnique({
+        where: { contactId_tagId: { contactId: id, tagId: body.tagId } },
+      });
+      if (existing) {
+        return reply.status(409).send({ error: "Contato já possui esta tag" });
+      }
+
+      await prisma.contactTag.create({
+        data: {
+          contactId: id,
+          tagId: body.tagId,
+          source: body.source,
+          note: body.note,
+        },
+      });
+
+      return reply.status(201).send({ success: true });
+    },
+  );
+
+  app.delete(
+    "/:id/tags",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const { id } = contactParamsSchema.parse(request.params);
+      const body = removeTagSchema.parse(request.body);
+
+      const existing = await prisma.contactTag.findUnique({
+        where: { contactId_tagId: { contactId: id, tagId: body.tagId } },
+      });
+      if (!existing) {
+        return reply.status(404).send({ error: "Contato não possui esta tag" });
+      }
+
+      await prisma.contactTag.delete({
+        where: { contactId_tagId: { contactId: id, tagId: body.tagId } },
+      });
+
+      return reply.status(204).send();
+    },
+  );
+
+  app.get(
+    "/:id/timeline",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const { id } = contactParamsSchema.parse(request.params);
+
+      const timelineQuery = z.object({
+        limit: z.coerce.number().int().min(1).max(100).default(50),
+        offset: z.coerce.number().int().min(0).default(0),
+      });
+      const query = timelineQuery.parse(request.query);
+
+      const contact = await prisma.contact.findFirst({
+        where: {
+          id,
+          conversations: {
+            some: { channel: { operationId: user.operationId } },
+          },
+        },
+      });
+      if (!contact) {
+        return reply.status(404).send({ error: "Contato não encontrado" });
+      }
+
+      const [events, total] = await Promise.all([
+        prisma.timelineEvent.findMany({
+          where: { contactId: id },
+          include: {
+            conversation: {
+              select: {
+                id: true,
+                channel: { select: { id: true, name: true, type: true } },
+              },
+            },
+          },
+          orderBy: { occurredAt: "desc" },
+          take: query.limit,
+          skip: query.offset,
+        }),
+        prisma.timelineEvent.count({ where: { contactId: id } }),
+      ]);
+
+      return reply.send({
+        events,
+        pagination: {
+          total,
+          limit: query.limit,
+          offset: query.offset,
+          hasMore: query.offset + events.length < total,
+        },
+      });
+    },
+  );
 }

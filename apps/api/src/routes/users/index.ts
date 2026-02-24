@@ -1,8 +1,8 @@
 import { UserRole } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../../prisma";
 import { authMiddleware } from "../../middleware/auth";
+import { prisma } from "../../prisma";
 
 // ============================================================================
 // Schemas
@@ -101,7 +101,9 @@ export async function usersRoutes(app: FastifyInstance) {
     const body = createUserSchema.parse(request.body);
 
     if (!requester.operationId) {
-      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
+      return reply
+        .status(400)
+        .send({ error: "Usuário sem operação vinculada" });
     }
 
     // Verifica se email já existe
@@ -136,7 +138,9 @@ export async function usersRoutes(app: FastifyInstance) {
     const { id } = userParamsSchema.parse(request.params);
     const body = updateUserSchema.parse(request.body);
 
-    const existing = await prisma.user.findFirst({ where: { id, operationId: requester.operationId } });
+    const existing = await prisma.user.findFirst({
+      where: { id, operationId: requester.operationId },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Usuário não encontrado" });
     }
@@ -173,7 +177,9 @@ export async function usersRoutes(app: FastifyInstance) {
     const requester = request.user!;
     const { id } = userParamsSchema.parse(request.params);
 
-    const existing = await prisma.user.findFirst({ where: { id, operationId: requester.operationId } });
+    const existing = await prisma.user.findFirst({
+      where: { id, operationId: requester.operationId },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Usuário não encontrado" });
     }

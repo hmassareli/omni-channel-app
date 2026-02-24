@@ -20,7 +20,12 @@ interface TopHeaderProps {
   currentRoute?: string;
 }
 
-const TopHeader = ({ userName, userEmail, onSignOut, currentRoute }: TopHeaderProps) => {
+const TopHeader = ({
+  userName,
+  userEmail,
+  onSignOut,
+  currentRoute,
+}: TopHeaderProps) => {
   const initials = userName
     ? userName
         .split(" ")
@@ -32,8 +37,18 @@ const TopHeader = ({ userName, userEmail, onSignOut, currentRoute }: TopHeaderPr
 
   const navItems = [
     { href: "/", label: "Início", icon: Users, route: "home" },
-    { href: "/companies", label: "Empresas", icon: Building2, route: "companies" },
-    { href: "/opportunities", label: "Oportunidades", icon: Target, route: "opportunities" },
+    {
+      href: "/companies",
+      label: "Empresas",
+      icon: Building2,
+      route: "companies",
+    },
+    {
+      href: "/opportunities",
+      label: "Oportunidades",
+      icon: Target,
+      route: "opportunities",
+    },
   ];
 
   return (
@@ -44,9 +59,11 @@ const TopHeader = ({ userName, userEmail, onSignOut, currentRoute }: TopHeaderPr
         </a>
         <nav className="flex items-center gap-1">
           {navItems.map((item) => {
-            const isActive = currentRoute === item.route || 
+            const isActive =
+              currentRoute === item.route ||
               (item.route === "companies" && currentRoute === "company") ||
-              (item.route === "opportunities" && currentRoute === "opportunity");
+              (item.route === "opportunities" &&
+                currentRoute === "opportunity");
             return (
               <a
                 key={item.href}

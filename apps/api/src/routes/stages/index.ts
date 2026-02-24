@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../../prisma";
 import { authMiddleware } from "../../middleware/auth";
+import { prisma } from "../../prisma";
 
 // ============================================================================
 // Schemas
@@ -14,7 +14,7 @@ const createStageSchema = z.object({
     .min(1, "Slug é obrigatório")
     .regex(
       /^[a-z0-9-]+$/,
-      "Slug deve conter apenas letras minúsculas, números e hífens"
+      "Slug deve conter apenas letras minúsculas, números e hífens",
     )
     .optional(),
   operationId: z.string().uuid("operationId deve ser um UUID válido"),
@@ -117,7 +117,9 @@ export async function stagesRoutes(app: FastifyInstance) {
     const body = createStageSchema.parse(request.body);
 
     if (!user.operationId) {
-      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
+      return reply
+        .status(400)
+        .send({ error: "Usuário sem operação vinculada" });
     }
 
     // Usa a operation do usuário (ignora body.operationId)
@@ -168,7 +170,9 @@ export async function stagesRoutes(app: FastifyInstance) {
     const { id } = stageParamsSchema.parse(request.params);
     const body = updateStageSchema.parse(request.body);
 
-    const existing = await prisma.stage.findFirst({ where: { id, operationId: user.operationId } });
+    const existing = await prisma.stage.findFirst({
+      where: { id, operationId: user.operationId },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Stage não encontrado" });
     }
@@ -188,35 +192,41 @@ export async function stagesRoutes(app: FastifyInstance) {
    * POST /stages/reorder
    * Reordena os stages de uma operation
    */
-  app.post("/reorder", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const body = reorderStagesSchema.parse(request.body);
+  app.post(
+    "/reorder",
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      const user = request.user!;
+      const body = reorderStagesSchema.parse(request.body);
 
-    if (!user.operationId) {
-      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
-    }
+      if (!user.operationId) {
+        return reply
+          .status(400)
+          .send({ error: "Usuário sem operação vinculada" });
+      }
 
-    // Usa a operation do usuário
-    const operationId = user.operationId;
+      // Usa a operation do usuário
+      const operationId = user.operationId;
 
-    // Atualiza a ordem de cada stage (apenas stages da operação)
-    await prisma.$transaction(
-      body.stageIds.map((stageId, index) =>
-        prisma.stage.updateMany({
-          where: { id: stageId, operationId },
-          data: { order: index },
-        })
-      )
-    );
+      // Atualiza a ordem de cada stage (apenas stages da operação)
+      await prisma.$transaction(
+        body.stageIds.map((stageId, index) =>
+          prisma.stage.updateMany({
+            where: { id: stageId, operationId },
+            data: { order: index },
+          }),
+        ),
+      );
 
-    // Retorna os stages atualizados
-    const stages = await prisma.stage.findMany({
-      where: { operationId },
-      orderBy: { order: "asc" },
-    });
+      // Retorna os stages atualizados
+      const stages = await prisma.stage.findMany({
+        where: { operationId },
+        orderBy: { order: "asc" },
+      });
 
-    return reply.send({ stages });
-  });
+      return reply.send({ stages });
+    },
+  );
 
   /**
    * DELETE /stages/:id
@@ -226,7 +236,9 @@ export async function stagesRoutes(app: FastifyInstance) {
     const user = request.user!;
     const { id } = stageParamsSchema.parse(request.params);
 
-    const existing = await prisma.stage.findFirst({ where: { id, operationId: user.operationId } });
+    const existing = await prisma.stage.findFirst({
+      where: { id, operationId: user.operationId },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Stage não encontrado" });
     }

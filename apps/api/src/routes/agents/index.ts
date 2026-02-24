@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma } from "../../prisma";
 import { authMiddleware } from "../../middleware/auth";
+import { prisma } from "../../prisma";
 
 // ============================================================================
 // Schemas
@@ -100,7 +100,9 @@ export async function agentsRoutes(app: FastifyInstance) {
     const body = createAgentSchema.parse(request.body);
 
     if (!user.operationId) {
-      return reply.status(400).send({ error: "Usuário sem operação vinculada" });
+      return reply
+        .status(400)
+        .send({ error: "Usuário sem operação vinculada" });
     }
 
     const operationId = user.operationId;
@@ -115,7 +117,9 @@ export async function agentsRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Usuário não encontrado" });
       }
       if (targetUser.operationId !== user.operationId) {
-        return reply.status(403).send({ error: "Usuário não pertence à sua operação" });
+        return reply
+          .status(403)
+          .send({ error: "Usuário não pertence à sua operação" });
       }
       if (targetUser.agent) {
         return reply
@@ -149,7 +153,9 @@ export async function agentsRoutes(app: FastifyInstance) {
     const { id } = agentParamsSchema.parse(request.params);
     const body = updateAgentSchema.parse(request.body);
 
-    const existing = await prisma.agent.findFirst({ where: { id, operationId: user.operationId } });
+    const existing = await prisma.agent.findFirst({
+      where: { id, operationId: user.operationId },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Agente não encontrado" });
     }
@@ -190,7 +196,9 @@ export async function agentsRoutes(app: FastifyInstance) {
     const user = request.user!;
     const { id } = agentParamsSchema.parse(request.params);
 
-    const existing = await prisma.agent.findFirst({ where: { id, operationId: user.operationId } });
+    const existing = await prisma.agent.findFirst({
+      where: { id, operationId: user.operationId },
+    });
     if (!existing) {
       return reply.status(404).send({ error: "Agente não encontrado" });
     }
