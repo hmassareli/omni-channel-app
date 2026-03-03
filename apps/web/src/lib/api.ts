@@ -1,25 +1,71 @@
 // Cliente HTTP para a API do backend
+// Tipos compartilhados derivados do Prisma (fonte única de verdade)
 import type {
   Agent,
+  AgentWithRelations,
+  AuthUser,
   Channel,
   ChannelStatus,
+  ChannelStatusResponse,
+  ChannelWithDetails,
   Company,
+  CompanyWithCounts,
+  ContactWithIdentities,
+  CreateContactResponse,
+  CreateWhatsAppChannelResponse,
+  GetCompaniesResponse,
+  GetCompanyTimelineResponse,
+  GetContactsResponse,
+  GetOpportunitiesKanbanResponse,
+  GetOpportunitiesResponse,
+  GetOpportunityTimelineResponse,
+  GetStagesResponse,
+  GetWhatsAppChatsResponse,
+  LinkContactToCompanyResponse,
+  LinkWhatsAppChatResponse,
+  LookupCNPJResponse,
   Operation,
   Opportunity,
+  OpportunityDetail,
+  OpportunityListItem,
+  Pagination,
+  QRCodeResponse,
   Stage,
+  StageWithRelations,
+  WhatsAppChat,
 } from "@omni/api/types";
 import { supabase } from "./supabase";
 
 // Re-export types para facilitar uso nos componentes
 export type {
   Agent,
+  AgentWithRelations,
   Channel,
   ChannelStatus,
+  ChannelStatusResponse,
+  ChannelWithDetails,
   Company,
+  CompanyWithCounts,
+  ContactWithIdentities,
+  CreateWhatsAppChannelResponse,
+  LookupCNPJResponse,
   Operation,
   Opportunity,
+  OpportunityDetail,
+  OpportunityListItem,
+  Pagination,
+  QRCodeResponse,
   Stage,
+  StageWithRelations,
+  WhatsAppChat,
 };
+
+// Aliases de compatibilidade
+export type User = AuthUser;
+export type AgentWithChannels = AgentWithRelations;
+export type OpportunityTimelineResponse = GetOpportunityTimelineResponse;
+export type OpportunityTimelineEvent =
+  GetOpportunityTimelineResponse["events"][number];
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3333";
 
@@ -29,7 +75,7 @@ interface ApiError {
 }
 
 async function apiRequest<T>(
-  method: "GET" | "POST" | "PUT" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body?: unknown,
 ): Promise<T> {
@@ -70,39 +116,23 @@ async function apiRequest<T>(
 // Auth
 // ============================================================================
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: "ADMIN" | "MANAGER" | "AGENT";
-  operationId: string | null;
-}
-
-interface SignupResponse {
-  user: User;
-}
-
 /**
  * Cria um usuário no banco após signup no Supabase
  * IMPORTANTE: Chamar logo após o usuário fazer signup
  */
-export async function signupUser(email: string, name: string): Promise<User> {
-  const response = await apiRequest<SignupResponse>("POST", "/auth/signup", {
+export async function signupUser(email: string, name: string): Promise<AuthUser> {
+  const response = await apiRequest<{ user: AuthUser }>("POST", "/auth/signup", {
     email,
     name,
   });
   return response.user;
 }
 
-interface GetMeResponse {
-  user: User;
-}
-
 /**
  * Retorna informações do usuário autenticado
  */
-export async function getCurrentUser(): Promise<User> {
-  const response = await apiRequest<GetMeResponse>("GET", "/auth/me");
+export async function getCurrentUser(): Promise<AuthUser> {
+  const response = await apiRequest<{ user: AuthUser }>("GET", "/auth/me");
   return response.user;
 }
 
@@ -110,19 +140,8 @@ export async function getCurrentUser(): Promise<User> {
 // Operations
 // ============================================================================
 
-interface GetOperationResponse {
-  operation: Operation | null;
-}
-
-interface CreateOperationResponse {
-  operation: Operation;
-}
-interface UpdateOperationResponse {
-  operation: Operation;
-}
-
 export async function createOperation(name: string): Promise<Operation> {
-  const response = await apiRequest<CreateOperationResponse>(
+  const response = await apiRequest<{ operation: Operation }>(
     "POST",
     "/operations",
     { name },
@@ -134,14 +153,14 @@ export async function createOperation(name: string): Promise<Operation> {
  * Retorna a operation do usuário autenticado
  */
 export async function getUserOperation(): Promise<Operation | null> {
-  const response = await apiRequest<GetOperationResponse>("GET", "/operations");
+  const response = await apiRequest<{ operation: Operation | null }>("GET", "/operations");
   return response.operation;
 }
 export async function updateOperation(
   id: string,
   data: { name?: string; onboardingCompleted?: boolean },
 ): Promise<Operation> {
-  const response = await apiRequest<UpdateOperationResponse>(
+  const response = await apiRequest<{ operation: Operation }>(
     "PUT",
     `/operations/${id}`,
     data,
@@ -150,7 +169,7 @@ export async function updateOperation(
 }
 
 export async function getOperations(): Promise<Operation[]> {
-  const response = await apiRequest<GetOperationResponse>("GET", "/operations");
+  const response = await apiRequest<{ operation: Operation | null }>("GET", "/operations");
   return response.operation ? [response.operation] : [];
 }
 
@@ -158,28 +177,11 @@ export async function getOperations(): Promise<Operation[]> {
 // Agents
 // ============================================================================
 
-interface CreateAgentResponse {
-  agent: Agent;
-}
-
-interface GetAgentsResponse {
-  agents: (Agent & {
-    channels: Array<{
-      id: string;
-      name: string;
-      type: string;
-      status: string;
-    }>;
-  })[];
-}
-
-export type AgentWithChannels = GetAgentsResponse["agents"][number];
-
 export async function createAgent(data: {
   name: string;
   operationId: string;
 }): Promise<Agent> {
-  const response = await apiRequest<CreateAgentResponse>(
+  const response = await apiRequest<{ agent: Agent }>(
     "POST",
     "/agents",
     data,
@@ -189,16 +191,16 @@ export async function createAgent(data: {
 
 export async function getAgentsByOperation(
   operationId: string,
-): Promise<AgentWithChannels[]> {
-  const response = await apiRequest<GetAgentsResponse>(
+): Promise<AgentWithRelations[]> {
+  const response = await apiRequest<{ agents: AgentWithRelations[] }>(
     "GET",
     `/agents?operationId=${operationId}`,
   );
   return response.agents;
 }
 
-export async function getAgents(): Promise<AgentWithChannels[]> {
-  const response = await apiRequest<GetAgentsResponse>("GET", "/agents");
+export async function getAgents(): Promise<AgentWithRelations[]> {
+  const response = await apiRequest<{ agents: AgentWithRelations[] }>("GET", "/agents");
   return response.agents;
 }
 
@@ -206,27 +208,12 @@ export async function getAgents(): Promise<AgentWithChannels[]> {
 // Channels (WhatsApp)
 // ============================================================================
 
-// Tipo extendido com detalhes do WhatsApp (não vem do Prisma direto)
-export interface ChannelWithDetails extends Channel {
-  whatsappDetails?: {
-    sessionName: string;
-  };
-}
-
 export async function getChannels(): Promise<ChannelWithDetails[]> {
   const response = await apiRequest<{ channels: ChannelWithDetails[] }>(
     "GET",
     "/channels",
   );
   return response.channels;
-}
-
-export interface CreateWhatsAppChannelResponse {
-  channel: ChannelWithDetails;
-  wahaSession?: {
-    name: string;
-    status: string;
-  };
 }
 
 export async function createWhatsAppChannel(data: {
@@ -242,26 +229,10 @@ export async function createWhatsAppChannel(data: {
   );
 }
 
-export interface QRCodeResponse {
-  channelId: string;
-  qrCode?: string; // Base64 da imagem
-  qrValue?: string;
-}
-
 export async function getChannelQRCode(
   channelId: string,
 ): Promise<QRCodeResponse> {
   return apiRequest<QRCodeResponse>("GET", `/channels/${channelId}/qr`);
-}
-
-export interface ChannelStatusResponse {
-  channelId: string;
-  type: string;
-  status: ChannelStatus;
-  wahaStatus?: string;
-  phoneNumber?: string;
-  pushName?: string;
-  error?: string;
 }
 
 export async function getChannelStatus(
@@ -291,35 +262,6 @@ interface GetCompaniesParams {
   offset?: number;
 }
 
-interface GetCompaniesResponse {
-  companies: Company[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
-interface GetCompanyResponse {
-  company: Company;
-}
-
-interface CompanyTimelineResponse {
-  timeline: Array<{
-    id: string;
-    type: string;
-    createdAt: string;
-    data: unknown;
-  }>;
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
 export async function getCompanies(
   params?: GetCompaniesParams,
 ): Promise<GetCompaniesResponse> {
@@ -336,18 +278,12 @@ export async function createCompany(data: {
   name?: string;
   alias?: string;
 }): Promise<Company> {
-  const response = await apiRequest<GetCompanyResponse>(
+  const response = await apiRequest<{ company: Company }>(
     "POST",
     "/companies",
     data,
   );
   return response.company;
-}
-
-export interface LookupCNPJResponse {
-  company: Partial<Company>;
-  source: "database" | "api";
-  exists: boolean;
 }
 
 export async function lookupCNPJ(cnpj: string): Promise<LookupCNPJResponse> {
@@ -359,7 +295,7 @@ export async function lookupCNPJ(cnpj: string): Promise<LookupCNPJResponse> {
 }
 
 export async function getCompany(id: string): Promise<Company> {
-  const response = await apiRequest<GetCompanyResponse>(
+  const response = await apiRequest<{ company: Company }>(
     "GET",
     `/companies/${id}`,
   );
@@ -370,7 +306,7 @@ export async function updateCompany(
   id: string,
   data: Partial<Pick<Company, "name" | "alias">>,
 ): Promise<Company> {
-  const response = await apiRequest<GetCompanyResponse>(
+  const response = await apiRequest<{ company: Company }>(
     "PUT",
     `/companies/${id}`,
     data,
@@ -381,12 +317,12 @@ export async function updateCompany(
 export async function getCompanyTimeline(
   companyId: string,
   params?: { limit?: number; offset?: number },
-): Promise<CompanyTimelineResponse> {
+): Promise<GetCompanyTimelineResponse> {
   const searchParams = new URLSearchParams();
   if (params?.limit) searchParams.set("limit", params.limit.toString());
   if (params?.offset) searchParams.set("offset", params.offset.toString());
 
-  return apiRequest<CompanyTimelineResponse>(
+  return apiRequest<GetCompanyTimelineResponse>(
     "GET",
     `/companies/${companyId}/timeline?${searchParams}`,
   );
@@ -402,29 +338,6 @@ interface GetOpportunitiesParams {
   companyId?: string;
   limit?: number;
   offset?: number;
-}
-
-interface GetOpportunitiesResponse {
-  opportunities: Opportunity[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
-interface GetOpportunityResponse {
-  opportunity: Opportunity;
-}
-
-interface KanbanColumn {
-  stage: Stage;
-  opportunities: Opportunity[];
-}
-
-interface GetOpportunitiesKanbanResponse {
-  columns: KanbanColumn[];
 }
 
 export async function getOpportunities(
@@ -456,8 +369,8 @@ export async function createOpportunity(data: {
   agentId?: string;
   estimatedValue?: number;
   notes?: string;
-}): Promise<Opportunity> {
-  const response = await apiRequest<GetOpportunityResponse>(
+}): Promise<OpportunityListItem> {
+  const response = await apiRequest<{ opportunity: OpportunityListItem }>(
     "POST",
     "/opportunities",
     data,
@@ -470,8 +383,8 @@ export async function updateOpportunity(
   data: Partial<
     Pick<Opportunity, "stageId" | "agentId" | "estimatedValue" | "notes">
   >,
-): Promise<Opportunity> {
-  const response = await apiRequest<GetOpportunityResponse>(
+): Promise<OpportunityListItem> {
+  const response = await apiRequest<{ opportunity: OpportunityListItem }>(
     "PUT",
     `/opportunities/${id}`,
     data,
@@ -482,8 +395,8 @@ export async function updateOpportunity(
 export async function moveOpportunity(
   id: string,
   stageId: string,
-): Promise<Opportunity> {
-  const response = await apiRequest<GetOpportunityResponse>(
+): Promise<OpportunityListItem> {
+  const response = await apiRequest<{ opportunity: OpportunityListItem }>(
     "PUT",
     `/opportunities/${id}/move`,
     { stageId },
@@ -495,12 +408,6 @@ export async function deleteOpportunity(id: string): Promise<void> {
   await apiRequest<void>("DELETE", `/opportunities/${id}`);
 }
 
-export interface OpportunityDetail extends Opportunity {
-  company: Company;
-  stage: Stage;
-  agent: { id: string; name: string; avatarUrl: string | null } | null;
-}
-
 export async function getOpportunity(id: string): Promise<OpportunityDetail> {
   const response = await apiRequest<{ opportunity: OpportunityDetail }>(
     "GET",
@@ -509,40 +416,15 @@ export async function getOpportunity(id: string): Promise<OpportunityDetail> {
   return response.opportunity;
 }
 
-export interface OpportunityTimelineEvent {
-  id: string;
-  type: string;
-  content: string;
-  metadata: unknown;
-  occurredAt: string;
-  contact: { id: string; name: string | null };
-  conversation: {
-    id: string;
-    channel: { id: string; name: string; type: string };
-  } | null;
-}
-
-export interface OpportunityTimelineResponse {
-  events: OpportunityTimelineEvent[];
-  contacts: Array<{ id: string; name: string | null }>;
-  company: { id: string; name: string };
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
 export async function getOpportunityTimeline(
   opportunityId: string,
   params?: { limit?: number; offset?: number },
-): Promise<OpportunityTimelineResponse> {
+): Promise<GetOpportunityTimelineResponse> {
   const searchParams = new URLSearchParams();
   if (params?.limit) searchParams.set("limit", params.limit.toString());
   if (params?.offset) searchParams.set("offset", params.offset.toString());
 
-  return apiRequest<OpportunityTimelineResponse>(
+  return apiRequest<GetOpportunityTimelineResponse>(
     "GET",
     `/opportunities/${opportunityId}/timeline?${searchParams}`,
   );
@@ -552,11 +434,7 @@ export async function getOpportunityTimeline(
 // Stages
 // ============================================================================
 
-interface GetStagesResponse {
-  stages: Stage[];
-}
-
-export async function getStages(): Promise<Stage[]> {
+export async function getStages(): Promise<StageWithRelations[]> {
   const response = await apiRequest<GetStagesResponse>("GET", "/stages");
   return response.stages;
 }
@@ -565,29 +443,11 @@ export async function getStages(): Promise<Stage[]> {
 // Contacts
 // ============================================================================
 
-interface ContactWithIdentities {
-  id: string;
-  name: string | null;
-  identities: Array<{ id: string; type: string; value: string }>;
-  company: { id: string; name: string; alias: string | null } | null;
-  _count: { conversations: number; messages: number };
-}
-
 interface GetContactsParams {
   search?: string;
   unlinked?: boolean;
   limit?: number;
   offset?: number;
-}
-
-interface GetContactsResponse {
-  contacts: ContactWithIdentities[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
 }
 
 export async function getContacts(
@@ -605,9 +465,9 @@ export async function getContacts(
 export async function linkContactToCompany(
   contactId: string,
   companyId: string,
-): Promise<ContactWithIdentities> {
-  const response = await apiRequest<{ contact: ContactWithIdentities }>(
-    "PUT",
+): Promise<LinkContactToCompanyResponse["contact"]> {
+  const response = await apiRequest<LinkContactToCompanyResponse>(
+    "PATCH",
     `/contacts/${contactId}/link-company`,
     { companyId },
   );
@@ -622,14 +482,6 @@ interface CreateContactData {
   role?: string;
 }
 
-interface CreateContactResponse {
-  contact: {
-    id: string;
-    name: string | null;
-    identities: Array<{ type: string; value: string }>;
-  };
-}
-
 export async function createContact(
   data: CreateContactData,
 ): Promise<CreateContactResponse["contact"]> {
@@ -641,37 +493,9 @@ export async function createContact(
   return response.contact;
 }
 
-// Chats do WhatsApp (via WAHA)
-export interface WhatsAppChat {
-  waId: string;
-  chatId: string;
-  name: string | null;
-  picture: string | null;
-  lastMessage: {
-    body: string;
-    timestamp: number;
-    fromMe: boolean;
-  } | null;
-  linked: boolean;
-  linkedToCompany: boolean;
-  contact: {
-    id: string;
-    name: string | null;
-    company: { id: string; name: string; alias: string | null } | null;
-  } | null;
-}
-
-interface WhatsAppChatsPagination {
-  offset: number;
-  limit: number;
-  hasMore: boolean;
-  totalFetched: number;
-}
-
-interface GetWhatsAppChatsResponse {
-  chats: WhatsAppChat[];
-  pagination: WhatsAppChatsPagination;
-}
+// ============================================================================
+// WhatsApp Chats (via WAHA)
+// ============================================================================
 
 export interface GetWhatsAppChatsResult {
   chats: WhatsAppChat[];
@@ -705,12 +529,6 @@ interface LinkWhatsAppChatData {
   channelId: string;
   name?: string;
   role?: string;
-}
-
-interface LinkWhatsAppChatResponse {
-  contact: ContactWithIdentities;
-  conversation: { id: string };
-  created: boolean;
 }
 
 export async function linkWhatsAppChat(

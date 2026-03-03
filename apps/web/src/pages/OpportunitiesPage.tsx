@@ -277,27 +277,40 @@ export function OpportunitiesPage() {
 
   const fetchData = async () => {
     setLoading(true);
-    try {
-      const [
-        kanbanResponse,
-        companiesResponse,
-        stagesResponse,
-        agentsResponse,
-      ] = await Promise.all([
-        api.getOpportunitiesKanban(),
-        api.getCompanies({ limit: 1000 }),
-        api.getStages(),
-        api.getAgents(),
-      ]);
-      setKanbanData(kanbanResponse.columns);
-      setCompanies(companiesResponse.companies);
-      setStages(stagesResponse);
-      setAgents(agentsResponse);
-    } catch (error) {
-      console.error("Erro ao buscar dados:", error);
-    } finally {
-      setLoading(false);
+    const results = await Promise.allSettled([
+      api.getOpportunitiesKanban(),
+      api.getCompanies({ limit: 100 }),
+      api.getStages(),
+      api.getAgents(),
+    ]);
+
+    const [kanbanResult, companiesResult, stagesResult, agentsResult] = results;
+
+    if (kanbanResult.status === "fulfilled") {
+      setKanbanData(kanbanResult.value.columns);
+    } else {
+      console.error("Erro ao buscar kanban:", kanbanResult.reason);
     }
+
+    if (companiesResult.status === "fulfilled") {
+      setCompanies(companiesResult.value.companies);
+    } else {
+      console.error("Erro ao buscar empresas:", companiesResult.reason);
+    }
+
+    if (stagesResult.status === "fulfilled") {
+      setStages(stagesResult.value);
+    } else {
+      console.error("Erro ao buscar estágios:", stagesResult.reason);
+    }
+
+    if (agentsResult.status === "fulfilled") {
+      setAgents(agentsResult.value);
+    } else {
+      console.error("Erro ao buscar agentes:", agentsResult.reason);
+    }
+
+    setLoading(false);
   };
 
   useEffect(() => {

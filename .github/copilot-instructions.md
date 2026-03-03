@@ -63,6 +63,8 @@ omni-channel-app/
 │   │   └── src/
 │   │       ├── index.ts          # Entry point do servidor Fastify
 │   │       ├── prisma.ts         # Singleton do PrismaClient
+│   │       ├── types.ts          # Re-export Prisma + api-types
+│   │       ├── api-types.ts      # Tipos compartilhados (fonte de verdade)
 │   │       ├── routes/webhooks/  # Endpoints de webhook
 │   │       └── services/
 │   │           ├── whatsapp-ingest.ts       # Ingestão de mensagens
@@ -223,6 +225,76 @@ docker-compose up -d     # Postgres + Adminer
 
 ---
 
+## Tipagem Compartilhada (Backend ↔ Frontend)
+
+> **REGRA CRÍTICA:** Nunca crie interfaces manuais no frontend para tipar respostas de API.
+> Todos os tipos de resposta devem ser derivados do Prisma e definidos em `apps/api/src/api-types.ts`.
+
+### Fonte Única de Verdade
+
+O arquivo `apps/api/src/api-types.ts` é a **fonte única de verdade** para todos os tipos de resposta da API.
+Ele usa `Prisma.XGetPayload<{ include: ... }>` para derivar tipos que refletem **exatamente** o que cada rota retorna.
+
+### Como funciona
+
+1. **Definir tipo no backend**: Em `apps/api/src/api-types.ts`, use `Prisma.XGetPayload` para definir o tipo:
+   ```ts
+   // ✅ CORRETO — tipo derivado do Prisma
+   export type CompanyWithCounts = Prisma.CompanyGetPayload<{
+     include: { _count: { select: { contacts: true; opportunities: true } } };
+   }>;
+   export interface GetCompaniesResponse {
+     companies: CompanyWithCounts[];
+     pagination: Pagination;
+   }
+   ```
+
+2. **Importar no frontend**: Em `apps/web/src/lib/api.ts`, importe de `@omni/api/types`:
+   ```ts
+   import type { GetCompaniesResponse } from "@omni/api/types";
+   ```
+
+3. **Usar nas chamadas**: Passe como genérico do `apiRequest`:
+   ```ts
+   return apiRequest<GetCompaniesResponse>("GET", `/companies?${searchParams}`);
+   ```
+
+### O que NÃO fazer
+
+```ts
+// ❌ ERRADO — interface manual no frontend que vai desalinhar
+interface GetCompaniesResponse {
+  companies: Company[];
+  pagination: { total: number; limit: number; offset: number; hasMore: boolean };
+}
+
+// ❌ ERRADO — tipo inventado sem Prisma
+export interface OpportunityDetail extends Opportunity {
+  company: Company;
+  stage: Stage;
+  agent: { id: string; name: string } | null;
+}
+```
+
+### Quando adicionar/modificar uma rota
+
+1. Verifique o `include`/`select` do Prisma na rota
+2. Crie ou atualize o tipo correspondente em `api-types.ts` usando `Prisma.XGetPayload`
+3. Crie a interface de resposta (ex: `GetXxxResponse`) que envolve o tipo
+4. No frontend, importe e use — **nunca** duplique a definição
+
+### Exports do pacote
+
+- `@omni/api/types` → Re-exporta Prisma base + `api-types.ts`
+- `@omni/api/api-types` → Acesso direto aos tipos da API
+
+### Método HTTP
+
+Sempre verifique o método HTTP da rota backend antes de usar no frontend.
+O `apiRequest` suporta: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`.
+
+---
+
 ## Pendências Conhecidas
 
 - [ ] Sincronização de labels com WAHA (criar/atualizar labels no WhatsApp)
@@ -240,4 +312,4 @@ docker-compose up -d     # Postgres + Adminer
 
 ---
 
-_Última atualização: Dezembro 2024_
+_Última atualização: Janeiro 2025_

@@ -430,6 +430,6 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
       }),
     );
 
-    return reply.send({ kanban: kanbanData });
+    return reply.send({ columns: kanbanData });
   });
 }
