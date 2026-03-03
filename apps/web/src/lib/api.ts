@@ -120,11 +120,18 @@ async function apiRequest<T>(
  * Cria um usuário no banco após signup no Supabase
  * IMPORTANTE: Chamar logo após o usuário fazer signup
  */
-export async function signupUser(email: string, name: string): Promise<AuthUser> {
-  const response = await apiRequest<{ user: AuthUser }>("POST", "/auth/signup", {
-    email,
-    name,
-  });
+export async function signupUser(
+  email: string,
+  name: string,
+): Promise<AuthUser> {
+  const response = await apiRequest<{ user: AuthUser }>(
+    "POST",
+    "/auth/signup",
+    {
+      email,
+      name,
+    },
+  );
   return response.user;
 }
 
@@ -153,7 +160,10 @@ export async function createOperation(name: string): Promise<Operation> {
  * Retorna a operation do usuário autenticado
  */
 export async function getUserOperation(): Promise<Operation | null> {
-  const response = await apiRequest<{ operation: Operation | null }>("GET", "/operations");
+  const response = await apiRequest<{ operation: Operation | null }>(
+    "GET",
+    "/operations",
+  );
   return response.operation;
 }
 export async function updateOperation(
@@ -169,7 +179,10 @@ export async function updateOperation(
 }
 
 export async function getOperations(): Promise<Operation[]> {
-  const response = await apiRequest<{ operation: Operation | null }>("GET", "/operations");
+  const response = await apiRequest<{ operation: Operation | null }>(
+    "GET",
+    "/operations",
+  );
   return response.operation ? [response.operation] : [];
 }
 
@@ -181,11 +194,7 @@ export async function createAgent(data: {
   name: string;
   operationId: string;
 }): Promise<Agent> {
-  const response = await apiRequest<{ agent: Agent }>(
-    "POST",
-    "/agents",
-    data,
-  );
+  const response = await apiRequest<{ agent: Agent }>("POST", "/agents", data);
   return response.agent;
 }
 
@@ -200,7 +209,10 @@ export async function getAgentsByOperation(
 }
 
 export async function getAgents(): Promise<AgentWithRelations[]> {
-  const response = await apiRequest<{ agents: AgentWithRelations[] }>("GET", "/agents");
+  const response = await apiRequest<{ agents: AgentWithRelations[] }>(
+    "GET",
+    "/agents",
+  );
   return response.agents;
 }
 

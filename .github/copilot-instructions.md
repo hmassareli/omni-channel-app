@@ -238,6 +238,7 @@ Ele usa `Prisma.XGetPayload<{ include: ... }>` para derivar tipos que refletem *
 ### Como funciona
 
 1. **Definir tipo no backend**: Em `apps/api/src/api-types.ts`, use `Prisma.XGetPayload` para definir o tipo:
+
    ```ts
    // ✅ CORRETO — tipo derivado do Prisma
    export type CompanyWithCounts = Prisma.CompanyGetPayload<{
@@ -250,6 +251,7 @@ Ele usa `Prisma.XGetPayload<{ include: ... }>` para derivar tipos que refletem *
    ```
 
 2. **Importar no frontend**: Em `apps/web/src/lib/api.ts`, importe de `@omni/api/types`:
+
    ```ts
    import type { GetCompaniesResponse } from "@omni/api/types";
    ```
@@ -265,7 +267,12 @@ Ele usa `Prisma.XGetPayload<{ include: ... }>` para derivar tipos que refletem *
 // ❌ ERRADO — interface manual no frontend que vai desalinhar
 interface GetCompaniesResponse {
   companies: Company[];
-  pagination: { total: number; limit: number; offset: number; hasMore: boolean };
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
 }
 
 // ❌ ERRADO — tipo inventado sem Prisma
