@@ -1,15 +1,160 @@
+import {
+  closestCorners,
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { MoreHorizontal, Plus, User, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as api from "../lib/api";
+
+type KanbanColumns = Awaited<ReturnType<typeof api.getOpportunitiesKanban>>["columns"];
+type KanbanColumn = KanbanColumns[number];
+type KanbanOpportunity = KanbanColumn["opportunities"][number];
+
+function cloneKanbanColumns(columns: KanbanColumns): KanbanColumns {
+  return columns.map((column) => ({
+    ...column,
+    opportunities: [...column.opportunities],
+  }));
+}
+
+function findOpportunityById(
+  columns: KanbanColumns,
+  opportunityId: string,
+): KanbanOpportunity | null {
+  for (const column of columns) {
+    const opportunity = column.opportunities.find((item) => item.id === opportunityId);
+    if (opportunity) {
+      return opportunity;
+    }
+  }
+
+  return null;
+}
+
+function findStageIdForOpportunity(
+  columns: KanbanColumns,
+  opportunityId: string,
+): string | null {
+  for (const column of columns) {
+    if (column.opportunities.some((item) => item.id === opportunityId)) {
+      return column.stage.id;
+    }
+  }
+
+  return null;
+}
+
+function findStageIdForTarget(
+  columns: KanbanColumns,
+  targetId: string | null | undefined,
+): string | null {
+  if (!targetId) {
+    return null;
+  }
+
+  const stageMatch = columns.find((column) => column.stage.id === targetId);
+  if (stageMatch) {
+    return stageMatch.stage.id;
+  }
+
+  return findStageIdForOpportunity(columns, targetId);
+}
+
+function moveOpportunityAcrossColumns(
+  columns: KanbanColumns,
+  opportunityId: string,
+  fromStageId: string,
+  toStageId: string,
+  overId: string | null | undefined,
+): KanbanColumns {
+  if (fromStageId === toStageId) {
+    return columns;
+  }
+
+  let movedOpportunity: KanbanOpportunity | null = null;
+
+  const withoutSourceOpportunity = columns.map((column) => {
+    if (column.stage.id !== fromStageId) {
+      return column;
+    }
+
+    const opportunities = column.opportunities.filter((item) => {
+      if (item.id === opportunityId) {
+        movedOpportunity = item;
+        return false;
+      }
+
+      return true;
+    });
+
+    if (!movedOpportunity) {
+      return column;
+    }
+
+    return {
+      ...column,
+      opportunities,
+      count: opportunities.length,
+    };
+  });
+
+  if (!movedOpportunity) {
+    return columns;
+  }
+
+  return withoutSourceOpportunity.map((column) => {
+    if (column.stage.id !== toStageId) {
+      return column;
+    }
+
+    const opportunities = [...column.opportunities];
+    const insertionIndex =
+      overId && overId !== toStageId
+        ? opportunities.findIndex((item) => item.id === overId)
+        : -1;
+
+    opportunities.splice(
+      insertionIndex >= 0 ? insertionIndex : opportunities.length,
+      0,
+      movedOpportunity,
+    );
+
+    return {
+      ...column,
+      opportunities,
+      count: opportunities.length,
+    };
+  });
+}
 
 // ============================================================================
 // Components
 // ============================================================================
 
-const OpportunityCardComponent = ({ opportunity, onClick }) => (
+const OpportunityCardComponent = ({
+  opportunity,
+  onClick,
+  isDragging = false,
+  isDragOverlay = false,
+}) => (
   <div
     onClick={onClick}
-    className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-purple-300 hover:shadow-md transition-all"
+    className={`rounded-xl border p-4 cursor-pointer transition-[transform,box-shadow,border-color,opacity] duration-200 ${
+      isDragOverlay
+        ? "bg-white border-purple-300 shadow-2xl rotate-1 scale-[1.02]"
+        : "bg-white border-gray-200 hover:border-purple-300 hover:shadow-lg"
+    } ${isDragging ? "opacity-40 shadow-sm" : "opacity-100"}`}
   >
     <div className="flex items-start justify-between mb-2">
       <h4 className="font-medium text-gray-800">
@@ -53,6 +198,108 @@ const OpportunityCardComponent = ({ opportunity, onClick }) => (
     )}
   </div>
 );
+
+const SortableOpportunityCard = ({
+  opportunity,
+  stageId,
+  onClick,
+  isSaving,
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: opportunity.id,
+    data: {
+      type: "opportunity",
+      stageId,
+    },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={`mb-3 touch-none ${isSaving ? "pointer-events-none" : ""}`}
+      {...attributes}
+      {...listeners}
+    >
+      <OpportunityCardComponent
+        opportunity={opportunity}
+        onClick={onClick}
+        isDragging={isDragging || isSaving}
+      />
+    </div>
+  );
+};
+
+const KanbanStageColumn = ({
+  kanbanStage,
+  onOpportunityClick,
+  isOver,
+  isSavingOpportunityId,
+}) => {
+  const { setNodeRef } = useDroppable({
+    id: kanbanStage.stage.id,
+    data: {
+      type: "stage",
+      stageId: kanbanStage.stage.id,
+    },
+  });
+
+  return (
+    <div className="shrink-0 w-80">
+      <div
+        className="rounded-t-xl px-4 py-3 mb-2 shadow-sm"
+        style={{
+          backgroundColor: kanbanStage.stage.color || "#8b5cf6",
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-white">{kanbanStage.stage.name}</h3>
+          <span className="text-white/80 text-sm">{kanbanStage.count}</span>
+        </div>
+      </div>
+
+      <div
+        ref={setNodeRef}
+        className={`rounded-b-xl p-3 min-h-100 max-h-[calc(100vh-250px)] overflow-y-auto transition-all duration-200 ${
+          isOver
+            ? "bg-purple-50 ring-2 ring-purple-200 shadow-lg"
+            : "bg-gray-100 ring-1 ring-transparent"
+        }`}
+      >
+        <SortableContext
+          items={kanbanStage.opportunities.map((opportunity) => opportunity.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {kanbanStage.opportunities.map((opportunity) => (
+            <SortableOpportunityCard
+              key={opportunity.id}
+              opportunity={opportunity}
+              stageId={kanbanStage.stage.id}
+              isSaving={isSavingOpportunityId === opportunity.id}
+              onClick={() => onOpportunityClick(opportunity)}
+            />
+          ))}
+        </SortableContext>
+
+        {kanbanStage.opportunities.length === 0 && (
+          <div className="text-center py-8 text-gray-400 text-sm border border-dashed border-gray-300 rounded-xl bg-white/60">
+            Solte uma oportunidade aqui
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const CreateOpportunityModal = ({
   isOpen,
@@ -267,13 +514,25 @@ const CreateOpportunityModal = ({
 // ============================================================================
 
 export function OpportunitiesPage() {
-  const [kanbanData, setKanbanData] = useState([]);
+  const [kanbanData, setKanbanData] = useState<KanbanColumns>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [companies, setCompanies] = useState([]);
   const [stages, setStages] = useState([]);
   const [agents, setAgents] = useState<api.AgentWithChannels[]>([]);
   const [filterStage, setFilterStage] = useState("");
+  const [activeOpportunity, setActiveOpportunity] = useState<KanbanOpportunity | null>(null);
+  const [dragSnapshot, setDragSnapshot] = useState<KanbanColumns | null>(null);
+  const [overStageId, setOverStageId] = useState<string | null>(null);
+  const [savingOpportunityId, setSavingOpportunityId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+  );
 
   const fetchData = async () => {
     setLoading(true);
@@ -321,28 +580,93 @@ export function OpportunitiesPage() {
     window.location.href = `/opportunities/${opportunity.id}`;
   };
 
-  const handleDragStart = (e, opportunityId, fromStageId) => {
-    e.dataTransfer.setData("opportunityId", opportunityId);
-    e.dataTransfer.setData("fromStageId", fromStageId);
+  const resetDragState = () => {
+    setActiveOpportunity(null);
+    setDragSnapshot(null);
+    setOverStageId(null);
   };
 
-  const handleDrop = async (e, toStageId) => {
-    e.preventDefault();
-    const opportunityId = e.dataTransfer.getData("opportunityId");
-    const fromStageId = e.dataTransfer.getData("fromStageId");
+  const handleDragStart = (event) => {
+    const opportunityId = String(event.active.id);
 
-    if (opportunityId && toStageId && fromStageId !== toStageId) {
-      try {
-        await api.updateOpportunity(opportunityId, { stageId: toStageId });
-        fetchData();
-      } catch (error) {
-        console.error("Erro ao mover oportunidade:", error);
-      }
+    setActiveOpportunity(findOpportunityById(kanbanData, opportunityId));
+    setDragSnapshot(cloneKanbanColumns(kanbanData));
+    setOverStageId(findStageIdForOpportunity(kanbanData, opportunityId));
+  };
+
+  const handleDragOver = (event) => {
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+
+    if (!overId) {
+      setOverStageId(null);
+      return;
     }
+
+    const fromStageId = findStageIdForOpportunity(kanbanData, activeId);
+    const toStageId = findStageIdForTarget(kanbanData, overId);
+
+    setOverStageId(toStageId);
+
+    if (!fromStageId || !toStageId || fromStageId === toStageId) {
+      return;
+    }
+
+    setKanbanData((currentColumns) =>
+      moveOpportunityAcrossColumns(
+        currentColumns,
+        activeId,
+        fromStageId,
+        toStageId,
+        overId,
+      ),
+    );
   };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
+  const handleDragCancel = () => {
+    if (dragSnapshot) {
+      setKanbanData(dragSnapshot);
+    }
+
+    resetDragState();
+  };
+
+  const handleDragEnd = async (event) => {
+    const activeId = String(event.active.id);
+    const dropTargetId = event.over ? String(event.over.id) : null;
+    const snapshot = dragSnapshot;
+
+    if (!snapshot) {
+      resetDragState();
+      return;
+    }
+
+    const fromStageId = findStageIdForOpportunity(snapshot, activeId);
+    const toStageId = findStageIdForTarget(kanbanData, dropTargetId);
+
+    if (!dropTargetId || !fromStageId || !toStageId) {
+      setKanbanData(snapshot);
+      resetDragState();
+      return;
+    }
+
+    if (fromStageId === toStageId) {
+      setKanbanData(snapshot);
+      resetDragState();
+      return;
+    }
+
+    setSavingOpportunityId(activeId);
+
+    try {
+      await api.updateOpportunity(activeId, { stageId: toStageId });
+    } catch (error) {
+      console.error("Erro ao mover oportunidade:", error);
+      setKanbanData(snapshot);
+    } finally {
+      setSavingOpportunityId(null);
+      resetDragState();
+    }
   };
 
   const filteredKanban = filterStage
@@ -428,56 +752,38 @@ export function OpportunitiesPage() {
             </div>
           </div>
         ) : (
-          <div className="flex gap-4 overflow-x-auto pb-4">
-            {filteredKanban.map((kanbanStage) => (
-              <div
-                key={kanbanStage.stage.id}
-                className="flex-shrink-0 w-80"
-                onDrop={(e) => handleDrop(e, kanbanStage.stage.id)}
-                onDragOver={handleDragOver}
-              >
-                <div
-                  className="rounded-t-lg px-4 py-3 mb-2"
-                  style={{
-                    backgroundColor: kanbanStage.stage.color || "#8b5cf6",
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-white">
-                      {kanbanStage.stage.name}
-                    </h3>
-                    <span className="text-white/80 text-sm">
-                      {kanbanStage.count}
-                    </span>
-                  </div>
-                </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragCancel={handleDragCancel}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="flex gap-4 overflow-x-auto pb-4 items-start">
+              {filteredKanban.map((kanbanStage) => (
+                <KanbanStageColumn
+                  key={kanbanStage.stage.id}
+                  kanbanStage={kanbanStage}
+                  isOver={overStageId === kanbanStage.stage.id}
+                  isSavingOpportunityId={savingOpportunityId}
+                  onOpportunityClick={handleOpportunityClick}
+                />
+              ))}
+            </div>
 
-                <div className="bg-gray-100 rounded-b-lg p-2 min-h-[400px] max-h-[calc(100vh-250px)] overflow-y-auto">
-                  {kanbanStage.opportunities.map((opportunity) => (
-                    <div
-                      key={opportunity.id}
-                      draggable
-                      onDragStart={(e) =>
-                        handleDragStart(e, opportunity.id, kanbanStage.stage.id)
-                      }
-                      className="mb-2"
-                    >
-                      <OpportunityCardComponent
-                        opportunity={opportunity}
-                        onClick={() => handleOpportunityClick(opportunity)}
-                      />
-                    </div>
-                  ))}
-
-                  {kanbanStage.opportunities.length === 0 && (
-                    <div className="text-center py-8 text-gray-400 text-sm">
-                      Nenhuma oportunidade
-                    </div>
-                  )}
+            <DragOverlay>
+              {activeOpportunity ? (
+                <div className="w-72 cursor-grabbing">
+                  <OpportunityCardComponent
+                    opportunity={activeOpportunity}
+                    onClick={() => {}}
+                    isDragOverlay
+                  />
                 </div>
-              </div>
-            ))}
-          </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </main>
 
