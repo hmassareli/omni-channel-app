@@ -8,7 +8,7 @@ import {
   MessageSquare,
   User,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import * as api from "../lib/api";
 
 // ============================================================================
@@ -21,8 +21,8 @@ function getOpportunityIdFromUrl(): string | null {
   return match ? match[1] : null;
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
+function formatDate(dateValue: string | Date): string {
+  const date = new Date(dateValue);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffHours = diffMs / (1000 * 60 * 60);
@@ -182,7 +182,7 @@ const TimelineMessage = ({
   channelName,
 }: {
   sender: string;
-  time: string;
+  time: string | Date;
   message: string;
   isInbound: boolean;
   channelName?: string;
@@ -224,7 +224,7 @@ const TimelineEvent = ({
   title,
   type,
 }: {
-  time: string;
+  time: string | Date;
   title: string;
   type: "create" | "stage_change" | "system";
 }) => (
@@ -262,7 +262,7 @@ export function OpportunityTimeline() {
   const [loading, setLoading] = useState(true);
   const [movingStage, setMovingStage] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
@@ -279,11 +279,11 @@ export function OpportunityTimeline() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     fetchData();
-  }, [id]);
+  }, [fetchData]);
 
   const handleStageClick = async (stageId: string) => {
     if (!opportunity || stageId === opportunity.stageId || movingStage) return;
