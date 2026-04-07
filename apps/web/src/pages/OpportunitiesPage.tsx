@@ -17,7 +17,9 @@ import { MoreHorizontal, Plus, User, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 
-type KanbanColumns = Awaited<ReturnType<typeof api.getOpportunitiesKanban>>["columns"];
+type KanbanColumns = Awaited<
+  ReturnType<typeof api.getOpportunitiesKanban>
+>["columns"];
 type KanbanColumn = KanbanColumns[number];
 type KanbanOpportunity = KanbanColumn["opportunities"][number];
 
@@ -33,7 +35,9 @@ function findOpportunityById(
   opportunityId: string,
 ): KanbanOpportunity | null {
   for (const column of columns) {
-    const opportunity = column.opportunities.find((item) => item.id === opportunityId);
+    const opportunity = column.opportunities.find(
+      (item) => item.id === opportunityId,
+    );
     if (opportunity) {
       return opportunity;
     }
@@ -521,10 +525,13 @@ export function OpportunitiesPage() {
   const [stages, setStages] = useState([]);
   const [agents, setAgents] = useState<api.AgentWithChannels[]>([]);
   const [filterStage, setFilterStage] = useState("");
-  const [activeOpportunity, setActiveOpportunity] = useState<KanbanOpportunity | null>(null);
+  const [activeOpportunity, setActiveOpportunity] =
+    useState<KanbanOpportunity | null>(null);
   const [dragSnapshot, setDragSnapshot] = useState<KanbanColumns | null>(null);
   const [overStageId, setOverStageId] = useState<string | null>(null);
-  const [savingOpportunityId, setSavingOpportunityId] = useState<string | null>(null);
+  const [savingOpportunityId, setSavingOpportunityId] = useState<string | null>(
+    null,
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
