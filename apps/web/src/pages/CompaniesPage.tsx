@@ -49,6 +49,10 @@ const CompanyCard = ({ company, onClick }) => (
 
 const CreateCompanyModal = ({ isOpen, onClose, onCreated }) => {
   const [cnpj, setCnpj] = useState("");
+  const [sector, setSector] = useState("");
+  const [annualRevenue, setAnnualRevenue] = useState("");
+  const [employeeCount, setEmployeeCount] = useState("");
+  const [apparentWealthSigns, setApparentWealthSigns] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -65,10 +69,23 @@ const CreateCompanyModal = ({ isOpen, onClose, onCreated }) => {
     setError(null);
 
     try {
-      await api.createCompany({ cnpj });
+      await api.createCompany({
+        cnpj,
+        sector: sector || undefined,
+        annualRevenue: annualRevenue || undefined,
+        employeeCount: employeeCount ? Number(employeeCount) : undefined,
+        apparentWealthSigns: apparentWealthSigns
+          .split(/\r?\n|,/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+      });
       onCreated();
       onClose();
       setCnpj("");
+      setSector("");
+      setAnnualRevenue("");
+      setEmployeeCount("");
+      setApparentWealthSigns("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar empresa");
     } finally {
@@ -116,6 +133,59 @@ const CreateCompanyModal = ({ isOpen, onClose, onCreated }) => {
             <p className="text-xs text-gray-500 mt-1">
               Os dados serão buscados automaticamente na base de dados
             </p>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Setor
+            </label>
+            <input
+              type="text"
+              value={sector}
+              onChange={(e) => setSector(e.target.value)}
+              placeholder="Ex.: Servicos juridicos"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Faturamento anual
+            </label>
+            <input
+              type="text"
+              value={annualRevenue}
+              onChange={(e) => setAnnualRevenue(e.target.value)}
+              placeholder="Ex.: R$ 5M - R$ 10M"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Quantidade de funcionarios
+            </label>
+            <input
+              type="number"
+              value={employeeCount}
+              onChange={(e) => setEmployeeCount(e.target.value)}
+              placeholder="Ex.: 120"
+              min="1"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Sinais de riqueza aparente
+            </label>
+            <textarea
+              value={apparentWealthSigns}
+              onChange={(e) => setApparentWealthSigns(e.target.value)}
+              placeholder="Um por linha ou separados por virgula"
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none resize-none"
+            />
           </div>
 
           <div className="flex gap-3 justify-end">

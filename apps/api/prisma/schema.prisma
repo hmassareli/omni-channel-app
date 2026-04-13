@@ -64,6 +64,12 @@ model Company {
   mainActivityText String? // Descrição CNAE principal
   sideActivities   Json?   // Array de CNAEs secundários [{id, text}]
 
+  // Enriquecimento comercial
+  sector               String?
+  annualRevenue        String?
+  employeeCount        Int?
+  apparentWealthSigns  String[] @default([])
+
   // Endereço
   addressStreet       String?
   addressNumber       String?

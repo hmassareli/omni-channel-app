@@ -82,7 +82,9 @@ async function fetchEmpresaPorCNPJ(
   }
 }
 
-function mapCNPJDataToCompany(data: CNPJAPIOffice) {
+function mapCNPJDataToCompany(
+  data: CNPJAPIOffice,
+): Prisma.CompanyUncheckedCreateInput {
   return {
     taxId: data.taxId,
     name: data.company?.name || data.alias,
@@ -114,6 +116,7 @@ function mapCNPJDataToCompany(data: CNPJAPIOffice) {
     members: data.company?.members,
     sourceApi: "CNPJA" as const,
     apiUpdatedAt: new Date(),
+    apparentWealthSigns: [],
     wealthSigns: {},
   };
 }
@@ -136,12 +139,20 @@ const createCompanySchema = z.object({
   cnpj: z.string().min(14, "CNPJ deve ter pelo menos 14 dígitos").max(18),
   name: z.string().optional(),
   alias: z.string().optional(),
+  sector: z.string().trim().min(1).optional(),
+  annualRevenue: z.string().trim().min(1).optional(),
+  employeeCount: z.coerce.number().int().min(1).optional(),
+  apparentWealthSigns: z.array(z.string().trim().min(1)).optional(),
   wealthSigns: z.record(z.string(), z.unknown()).optional(),
 });
 
 const updateCompanySchema = z.object({
   name: z.string().min(1).optional(),
   alias: z.string().optional(),
+  sector: z.string().trim().min(1).optional(),
+  annualRevenue: z.string().trim().min(1).optional(),
+  employeeCount: z.coerce.number().int().min(1).nullable().optional(),
+  apparentWealthSigns: z.array(z.string().trim().min(1)).optional(),
   wealthSigns: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -223,6 +234,12 @@ export async function companiesRoutes(app: FastifyInstance) {
 
     if (body.name) companyData.name = body.name;
     if (body.alias) companyData.alias = body.alias;
+    if (body.sector) companyData.sector = body.sector;
+    if (body.annualRevenue) companyData.annualRevenue = body.annualRevenue;
+    if (body.employeeCount) companyData.employeeCount = body.employeeCount;
+    if (body.apparentWealthSigns) {
+      companyData.apparentWealthSigns = body.apparentWealthSigns;
+    }
     if (body.wealthSigns)
       (companyData as { wealthSigns?: Record<string, unknown> }).wealthSigns =
         body.wealthSigns;

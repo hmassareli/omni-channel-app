@@ -73,6 +73,25 @@ const InfoRow = ({ label, value }) => (
   </div>
 );
 
+const ListSection = ({ items, emptyText }) => {
+  if (!items || items.length === 0) {
+    return <p className="text-sm text-gray-500">{emptyText}</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2 pt-2">
+      {items.map((item) => (
+        <span
+          key={item}
+          className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const ContactBadge = ({ name, phone }) => (
   <div className="flex items-center justify-between py-2">
     <div className="flex items-center gap-2">
@@ -976,7 +995,20 @@ export function CompanyTimeline() {
           <SidebarSection title="Dados da Empresa">
             <InfoRow label="Razão Social" value={company.name} />
             <InfoRow label="Status" value={company.status} />
+            <InfoRow label="Setor" value={company.sector} />
             <InfoRow label="Porte" value={company.sizeText} />
+            <InfoRow
+              label="Faturamento anual"
+              value={company.annualRevenue}
+            />
+            <InfoRow
+              label="Funcionarios"
+              value={
+                company.employeeCount
+                  ? company.employeeCount.toLocaleString("pt-BR")
+                  : null
+              }
+            />
             <InfoRow
               label="Atividade Principal"
               value={company.mainActivityText}
@@ -984,6 +1016,13 @@ export function CompanyTimeline() {
             <InfoRow
               label="Cidade"
               value={`${company.addressCity} - ${company.addressState}`}
+            />
+          </SidebarSection>
+
+          <SidebarSection title="Sinais de riqueza aparente">
+            <ListSection
+              items={company.apparentWealthSigns}
+              emptyText="Nenhum sinal informado"
             />
           </SidebarSection>
 

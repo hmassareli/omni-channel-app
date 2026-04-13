@@ -29,6 +29,9 @@ Lista todas as empresas com paginação e busca.
       "name": "Razão Social da Empresa",
       "alias": "Nome Fantasia",
       "status": "Ativa",
+      "sector": "Serviços Jurídicos",
+      "annualRevenue": "R$ 5M - R$ 10M",
+      "employeeCount": 120,
       "sizeText": "Microempresa",
       "mainActivityText": "Atividade Principal",
       "createdAt": "2025-01-01T00:00:00Z",
@@ -60,6 +63,10 @@ Cria uma nova empresa a partir do CNPJ.
   "cnpj": "37.335.118/0001-80",
   "name": "Nome Personalizado (opcional)",
   "alias": "Nome Fantasia (opcional)",
+  "sector": "Serviços Jurídicos",
+  "annualRevenue": "R$ 5M - R$ 10M",
+  "employeeCount": 120,
+  "apparentWealthSigns": ["Escritório premium", "Equipe numerosa"],
   "wealthSigns": {
     "score": 85,
     "notes": "Cliente VIP"
@@ -110,6 +117,10 @@ Busca uma empresa pelo ID com detalhes completos.
     "statusId": 2,
     "statusDate": "2020-01-15",
     "founded": "2020-01-15T00:00:00Z",
+    "sector": "Serviços Jurídicos",
+    "annualRevenue": "R$ 5M - R$ 10M",
+    "employeeCount": 120,
+    "apparentWealthSigns": ["Escritório premium", "Equipe numerosa"],
     "equity": 100000.00,
     "sizeId": 1,
     "sizeText": "Microempresa",
@@ -158,6 +169,10 @@ Atualiza uma empresa.
 {
   "name": "Novo Nome",
   "alias": "Novo Alias",
+  "sector": "Software",
+  "annualRevenue": "R$ 10M - R$ 20M",
+  "employeeCount": 200,
+  "apparentWealthSigns": ["Sede própria"],
   "wealthSigns": {
     "score": 90,
     "notes": "Atualização do score"

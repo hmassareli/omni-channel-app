@@ -292,6 +292,10 @@ export async function createCompany(data: {
   cnpj: string;
   name?: string;
   alias?: string;
+  sector?: string;
+  annualRevenue?: string;
+  employeeCount?: number;
+  apparentWealthSigns?: string[];
 }): Promise<Company> {
   const response = await apiRequest<{ company: Company }>(
     "POST",
@@ -319,7 +323,17 @@ export async function getCompany(id: string): Promise<Company> {
 
 export async function updateCompany(
   id: string,
-  data: Partial<Pick<Company, "name" | "alias">>,
+  data: Partial<
+    Pick<
+      Company,
+      | "name"
+      | "alias"
+      | "sector"
+      | "annualRevenue"
+      | "employeeCount"
+      | "apparentWealthSigns"
+    >
+  >,
 ): Promise<Company> {
   const response = await apiRequest<{ company: Company }>(
     "PUT",
