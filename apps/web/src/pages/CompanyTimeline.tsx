@@ -997,10 +997,7 @@ export function CompanyTimeline() {
             <InfoRow label="Status" value={company.status} />
             <InfoRow label="Setor" value={company.sector} />
             <InfoRow label="Porte" value={company.sizeText} />
-            <InfoRow
-              label="Faturamento anual"
-              value={company.annualRevenue}
-            />
+            <InfoRow label="Faturamento anual" value={company.annualRevenue} />
             <InfoRow
               label="Funcionarios"
               value={

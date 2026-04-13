@@ -1,10 +1,5 @@
-import {
-  Building2,
-  Plus,
-  Search,
-  X,
-} from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { Building2, Plus, Search, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import * as api from "../lib/api";
 
 // ============================================================================
@@ -22,7 +17,9 @@ const CompanyCard = ({ company, onClick }) => (
           <Building2 className="w-5 h-5 text-purple-600" />
         </div>
         <div>
-          <h3 className="font-semibold text-gray-800">{company.alias || company.name}</h3>
+          <h3 className="font-semibold text-gray-800">
+            {company.alias || company.name}
+          </h3>
           <p className="text-sm text-gray-500">{company.name}</p>
         </div>
       </div>
@@ -41,7 +38,10 @@ const CompanyCard = ({ company, onClick }) => (
         </span>
       </div>
       <span className="text-gray-400 font-mono text-xs">
-        {company.taxId.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")}
+        {company.taxId.replace(
+          /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
+          "$1.$2.$3/$4-$5",
+        )}
       </span>
     </div>
   </div>

@@ -15,11 +15,13 @@ API para gerenciamento de empresas (CNPJ).
 Lista todas as empresas com paginação e busca.
 
 **Query Parameters:**
+
 - `search` (opcional): Busca por nome, nome fantasia ou CNPJ
 - `limit` (opcional): Limite de resultados (default: 50, max: 100)
 - `offset` (opcional): Offset para paginação (default: 0)
 
 **Response:**
+
 ```json
 {
   "companies": [
@@ -58,6 +60,7 @@ Lista todas as empresas com paginação e busca.
 Cria uma nova empresa a partir do CNPJ.
 
 **Request Body:**
+
 ```json
 {
   "cnpj": "37.335.118/0001-80",
@@ -75,12 +78,14 @@ Cria uma nova empresa a partir do CNPJ.
 ```
 
 **Notas:**
+
 - O campo `cnpj` é obrigatório
 - Os dados são buscados automaticamente na API CNPJA
 - Se `name` não for fornecido, será usado o nome da razão social da API
 - O CNPJ deve ter pelo menos 14 dígitos ( caracteres não numéricos são removidos)
 
 **Response (201 Created):**
+
 ```json
 {
   "company": {
@@ -95,6 +100,7 @@ Cria uma nova empresa a partir do CNPJ.
 ```
 
 **Errors:**
+
 - `400`: CNPJ inválido
 - `404`: CNPJ não encontrado na base de dados
 - `409`: Empresa já existe
@@ -106,6 +112,7 @@ Cria uma nova empresa a partir do CNPJ.
 Busca uma empresa pelo ID com detalhes completos.
 
 **Response:**
+
 ```json
 {
   "company": {
@@ -165,6 +172,7 @@ Busca uma empresa pelo ID com detalhes completos.
 Atualiza uma empresa.
 
 **Request Body:**
+
 ```json
 {
   "name": "Novo Nome",
@@ -181,6 +189,7 @@ Atualiza uma empresa.
 ```
 
 **Response:**
+
 ```json
 {
   "company": { ... }
@@ -194,6 +203,7 @@ Atualiza uma empresa.
 Associa um contato existente à empresa.
 
 **Request Body:**
+
 ```json
 {
   "contactId": "uuid-do-contato"
@@ -201,6 +211,7 @@ Associa um contato existente à empresa.
 ```
 
 **Response (201 Created):**
+
 ```json
 { "success": true }
 ```
@@ -212,10 +223,12 @@ Associa um contato existente à empresa.
 Retorna a timeline agregada de TODOS os contatos da empresa.
 
 **Query Parameters:**
+
 - `limit` (opcional): Limite de eventos (default: 50, max: 100)
 - `offset` (opcional): Offset para paginação (default: 0)
 
 **Response:**
+
 ```json
 {
   "events": [
@@ -252,6 +265,7 @@ Retorna a timeline agregada de TODOS os contatos da empresa.
 Retorna insights agregados de todos os contatos da empresa.
 
 **Response:**
+
 ```json
 {
   "insights": [
