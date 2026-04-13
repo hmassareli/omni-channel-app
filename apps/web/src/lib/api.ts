@@ -19,8 +19,8 @@ import type {
   GetContactsResponse,
   GetOpportunitiesKanbanResponse,
   GetOpportunitiesResponse,
-  GetStageResponse,
   GetOpportunityTimelineResponse,
+  GetStageResponse,
   GetStagesResponse,
   GetWhatsAppChatsResponse,
   LinkContactToCompanyResponse,
@@ -463,17 +463,28 @@ export async function createStage(data: {
   promptCondition?: string;
   autoTransition?: boolean;
 }): Promise<Stage> {
-  const response = await apiRequest<CreateStageResponse>("POST", "/stages", data);
+  const response = await apiRequest<CreateStageResponse>(
+    "POST",
+    "/stages",
+    data,
+  );
   return response.stage;
 }
 
 export async function updateStage(
   id: string,
   data: Partial<
-    Pick<Stage, "name" | "order" | "color" | "promptCondition" | "autoTransition">
+    Pick<
+      Stage,
+      "name" | "order" | "color" | "promptCondition" | "autoTransition"
+    >
   >,
 ): Promise<StageWithRelations> {
-  const response = await apiRequest<GetStageResponse>("PUT", `/stages/${id}`, data);
+  const response = await apiRequest<GetStageResponse>(
+    "PUT",
+    `/stages/${id}`,
+    data,
+  );
   return response.stage;
 }
 
@@ -481,10 +492,14 @@ export async function reorderStages(
   operationId: string,
   stageIds: string[],
 ): Promise<Stage[]> {
-  const response = await apiRequest<ReorderStagesResponse>("POST", "/stages/reorder", {
-    operationId,
-    stageIds,
-  });
+  const response = await apiRequest<ReorderStagesResponse>(
+    "POST",
+    "/stages/reorder",
+    {
+      operationId,
+      stageIds,
+    },
+  );
   return response.stages;
 }
 

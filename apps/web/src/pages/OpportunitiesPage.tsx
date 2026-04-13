@@ -11,9 +11,9 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
-  SortableContext,
   arrayMove,
   horizontalListSortingStrategy,
+  SortableContext,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -37,7 +37,9 @@ type KanbanColumns = Awaited<
 type KanbanColumn = KanbanColumns[number];
 type KanbanOpportunity = KanbanColumn["opportunities"][number];
 type StageWithRelations = Awaited<ReturnType<typeof api.getStages>>[number];
-type Company = Awaited<ReturnType<typeof api.getCompanies>>["companies"][number];
+type Company = Awaited<
+  ReturnType<typeof api.getCompanies>
+>["companies"][number];
 type StageEditorState = {
   mode: "create" | "edit";
   stageId?: string;
@@ -183,10 +185,7 @@ function formatCurrency(value: number) {
 }
 
 function formatTaxId(value: string) {
-  return value.replace(
-    /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
-    "$1.$2.$3/$4-$5",
-  );
+  return value.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
 }
 
 function getOpportunitySortableId(opportunityId: string) {
@@ -363,13 +362,13 @@ function OpportunityCardComponent({
         </button>
       </div>
 
-      <p className="mb-3 text-sm text-gray-500">{formatTaxId(opportunity.company.taxId)}</p>
+      <p className="mb-3 text-sm text-gray-500">
+        {formatTaxId(opportunity.company.taxId)}
+      </p>
 
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-gray-500">
-            Valor estimado
-          </p>
+          <p className="text-xs font-medium text-gray-500">Valor estimado</p>
           <p className="mt-1 text-sm font-semibold text-green-600">
             {opportunity.estimatedValue
               ? formatCurrency(Number(opportunity.estimatedValue))
@@ -520,9 +519,7 @@ function KanbanStageColumn({
         />
       ) : (
         <>
-          <div
-            className="mb-3 rounded-lg border border-gray-200 bg-white px-3 py-3"
-          >
+          <div className="mb-3 rounded-lg border border-gray-200 bg-white px-3 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -651,7 +648,8 @@ function SortableKanbanStageColumn({
   });
 
   const isEditing =
-    stageEditor?.mode === "edit" && stageEditor.stageId === kanbanStage.stage.id;
+    stageEditor?.mode === "edit" &&
+    stageEditor.stageId === kanbanStage.stage.id;
   const isBusy =
     savingStageState === kanbanStage.stage.id || savingStageState === "reorder";
 
@@ -749,7 +747,9 @@ const CreateOpportunityModal = ({
       <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">Nova oportunidade</h2>
+            <h2 className="text-lg font-semibold text-gray-800">
+              Nova oportunidade
+            </h2>
             <p className="mt-1 text-sm text-gray-500">
               Adicione um novo card ao pipeline comercial.
             </p>
@@ -914,8 +914,13 @@ export function OpportunitiesPage() {
       api.getUserOperation(),
     ]);
 
-    const [kanbanResult, companiesResult, stagesResult, agentsResult, operationResult] =
-      results;
+    const [
+      kanbanResult,
+      companiesResult,
+      stagesResult,
+      agentsResult,
+      operationResult,
+    ] = results;
 
     if (kanbanResult.status === "fulfilled") {
       setKanbanData(kanbanResult.value.columns);
@@ -998,7 +1003,8 @@ export function OpportunitiesPage() {
 
     const opportunityId = event.active.data.current?.opportunityId as string;
     const fromStageId = findStageIdForOpportunity(kanbanData, opportunityId);
-    const toStageId = (event.over?.data.current?.stageId as string | undefined) ?? null;
+    const toStageId =
+      (event.over?.data.current?.stageId as string | undefined) ?? null;
     const overOpportunityId =
       event.over?.data.current?.type === "opportunity"
         ? (event.over.data.current.opportunityId as string)
@@ -1040,7 +1046,8 @@ export function OpportunitiesPage() {
 
     if (dragType === "stage") {
       const activeStageId = event.active.data.current?.stageId as string;
-      const targetStageId = (event.over?.data.current?.stageId as string | undefined) ?? null;
+      const targetStageId =
+        (event.over?.data.current?.stageId as string | undefined) ?? null;
 
       if (!targetStageId || activeStageId === targetStageId || !operationId) {
         setKanbanData(snapshot);
@@ -1108,7 +1115,8 @@ export function OpportunitiesPage() {
 
     const activeId = event.active.data.current?.opportunityId as string;
     const snapshotStageId = findStageIdForOpportunity(snapshot, activeId);
-    const targetStageId = (event.over?.data.current?.stageId as string | undefined) ?? null;
+    const targetStageId =
+      (event.over?.data.current?.stageId as string | undefined) ?? null;
 
     if (!targetStageId || !snapshotStageId) {
       setKanbanData(snapshot);
@@ -1335,7 +1343,9 @@ export function OpportunitiesPage() {
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-800">Oportunidades</h1>
+            <h1 className="text-2xl font-semibold text-gray-800">
+              Oportunidades
+            </h1>
             <p className="text-gray-500 mt-1">
               {totalOpportunities} oportunidades em {kanbanData.length} estagios
             </p>
@@ -1376,13 +1386,18 @@ export function OpportunitiesPage() {
       <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
         <div className="flex flex-wrap gap-3 text-sm">
           <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-600">
-            <strong className="text-gray-800">{totalOpportunities}</strong> cards ativos
+            <strong className="text-gray-800">{totalOpportunities}</strong>{" "}
+            cards ativos
           </div>
           <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-600">
-            <strong className="text-gray-800">{formatCurrency(totalEstimatedValue)}</strong> em aberto
+            <strong className="text-gray-800">
+              {formatCurrency(totalEstimatedValue)}
+            </strong>{" "}
+            em aberto
           </div>
           <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-600">
-            <strong className="text-gray-800">{filteredKanban.length}</strong> colunas visiveis
+            <strong className="text-gray-800">{filteredKanban.length}</strong>{" "}
+            colunas visiveis
           </div>
         </div>
       </div>
@@ -1415,7 +1430,8 @@ export function OpportunitiesPage() {
                   Nenhuma oportunidade encontrada
                 </p>
                 <p className="mt-2 text-sm text-gray-500">
-                  Ajuste o filtro ou crie uma nova coluna para comecar a montar o pipeline.
+                  Ajuste o filtro ou crie uma nova coluna para comecar a montar
+                  o pipeline.
                 </p>
                 <div className="mt-5 flex items-center justify-center gap-3">
                   <button
@@ -1444,7 +1460,9 @@ export function OpportunitiesPage() {
             >
               <div className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-2">
                 <SortableContext
-                  items={filteredKanban.map((column) => getStageSortableId(column.stage.id))}
+                  items={filteredKanban.map((column) =>
+                    getStageSortableId(column.stage.id),
+                  )}
                   strategy={horizontalListSortingStrategy}
                 >
                   <div className="flex h-full items-stretch gap-4 pr-4">
@@ -1501,8 +1519,8 @@ export function OpportunitiesPage() {
                     <OpportunityCardComponent
                       opportunity={activeOpportunity}
                       stageColor={
-                        findStageById(kanbanData, activeOpportunity.stageId)?.stage.color ||
-                        DEFAULT_STAGE_COLOR
+                        findStageById(kanbanData, activeOpportunity.stageId)
+                          ?.stage.color || DEFAULT_STAGE_COLOR
                       }
                       onClick={() => {}}
                       isDragOverlay
@@ -1522,7 +1540,9 @@ export function OpportunitiesPage() {
                               activeStage.stage.color || DEFAULT_STAGE_COLOR,
                           }}
                         />
-                        <p className="text-sm font-semibold">{activeStage.stage.name}</p>
+                        <p className="text-sm font-semibold">
+                          {activeStage.stage.name}
+                        </p>
                       </div>
                       <p className="mt-2 text-xs text-gray-500">
                         {getColumnCountLabel(activeStage.count)}
