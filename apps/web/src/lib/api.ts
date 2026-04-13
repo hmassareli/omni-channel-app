@@ -12,12 +12,14 @@ import type {
   CompanyWithCounts,
   ContactWithIdentities,
   CreateContactResponse,
+  CreateStageResponse,
   CreateWhatsAppChannelResponse,
   GetCompaniesResponse,
   GetCompanyTimelineResponse,
   GetContactsResponse,
   GetOpportunitiesKanbanResponse,
   GetOpportunitiesResponse,
+  GetStageResponse,
   GetOpportunityTimelineResponse,
   GetStagesResponse,
   GetWhatsAppChatsResponse,
@@ -30,6 +32,7 @@ import type {
   OpportunityListItem,
   Pagination,
   QRCodeResponse,
+  ReorderStagesResponse,
   Stage,
   StageWithRelations,
   WhatsAppChat,
@@ -449,6 +452,44 @@ export async function getOpportunityTimeline(
 export async function getStages(): Promise<StageWithRelations[]> {
   const response = await apiRequest<GetStagesResponse>("GET", "/stages");
   return response.stages;
+}
+
+export async function createStage(data: {
+  name: string;
+  operationId: string;
+  slug?: string;
+  order?: number;
+  color?: string;
+  promptCondition?: string;
+  autoTransition?: boolean;
+}): Promise<Stage> {
+  const response = await apiRequest<CreateStageResponse>("POST", "/stages", data);
+  return response.stage;
+}
+
+export async function updateStage(
+  id: string,
+  data: Partial<
+    Pick<Stage, "name" | "order" | "color" | "promptCondition" | "autoTransition">
+  >,
+): Promise<StageWithRelations> {
+  const response = await apiRequest<GetStageResponse>("PUT", `/stages/${id}`, data);
+  return response.stage;
+}
+
+export async function reorderStages(
+  operationId: string,
+  stageIds: string[],
+): Promise<Stage[]> {
+  const response = await apiRequest<ReorderStagesResponse>("POST", "/stages/reorder", {
+    operationId,
+    stageIds,
+  });
+  return response.stages;
+}
+
+export async function deleteStage(id: string): Promise<void> {
+  await apiRequest<void>("DELETE", `/stages/${id}`);
 }
 
 // ============================================================================
