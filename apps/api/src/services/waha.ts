@@ -290,7 +290,7 @@ export async function waitForStatus(
 export async function configureWebhooks(
   sessionName: string,
   webhookUrl: string,
-  events: string[] = ["message", "session.status"],
+  events: string[] = ["message.any", "session.status"],
 ): Promise<void> {
   await wahaRequest("PUT", `/api/sessions/${sessionName}`, {
     config: {

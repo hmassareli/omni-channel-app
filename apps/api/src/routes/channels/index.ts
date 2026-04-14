@@ -111,7 +111,7 @@ export async function channelsRoutes(app: FastifyInstance) {
             webhooks: [
               {
                 url: webhookUrl,
-                events: ["message", "session.status"],
+                events: ["message.any", "session.status"],
               },
             ],
           },
