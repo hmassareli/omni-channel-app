@@ -4,6 +4,11 @@ import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
 import { prisma } from "../../prisma";
 import * as waha from "../../services/waha";
+import {
+  ensureWhatsappSessionWebhook,
+  resolveWhatsappWebhookUrl,
+} from "../../services/whatsapp-webhook";
+import { syncWhatsAppChats } from "../../services/whatsapp-sync";
 
 // ============================================================================
 // Schemas de validação
@@ -68,6 +73,14 @@ export async function channelsRoutes(app: FastifyInstance) {
 
       // Gera nome único para sessão WAHA
       const sessionName = `channel-${Date.now()}`;
+      const webhookUrl = resolveWhatsappWebhookUrl(body.webhookUrl);
+
+      if (!webhookUrl) {
+        return reply.status(500).send({
+          error:
+            "Webhook do WhatsApp não configurado. Defina APP_PUBLIC_URL no backend.",
+        });
+      }
 
       // Cria o canal no banco
       const channel = await prisma.channel.create({
@@ -80,7 +93,7 @@ export async function channelsRoutes(app: FastifyInstance) {
           whatsappDetails: {
             create: {
               sessionName,
-              webhookUrl: body.webhookUrl,
+              webhookUrl,
             },
           },
         },
@@ -95,14 +108,12 @@ export async function channelsRoutes(app: FastifyInstance) {
           name: sessionName,
           start: true,
           config: {
-            webhooks: body.webhookUrl
-              ? [
-                  {
-                    url: body.webhookUrl,
-                    events: ["message", "session.status"],
-                  },
-                ]
-              : undefined,
+            webhooks: [
+              {
+                url: webhookUrl,
+                events: ["message", "session.status"],
+              },
+            ],
           },
         });
 
@@ -276,6 +287,24 @@ export async function channelsRoutes(app: FastifyInstance) {
           }
         }
 
+        if (wahaSession.status === "WORKING") {
+          const shouldSync = channel.status !== ChannelStatus.WORKING;
+
+          await ensureWhatsappSessionWebhook(
+            channel.whatsappDetails.sessionName,
+            channel.whatsappDetails.webhookUrl,
+          );
+
+          if (shouldSync) {
+            syncWhatsAppChats(
+              channel.id,
+              channel.whatsappDetails.sessionName,
+            ).catch((error) => {
+              console.error("[Channels] Erro no sync após WORKING:", error);
+            });
+          }
+        }
+
         return reply.send({
           channelId: channel.id,
           type: channel.type,
@@ -341,6 +370,20 @@ export async function channelsRoutes(app: FastifyInstance) {
           channel.whatsappDetails.sessionName,
         );
         const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
+
+        if (wahaSession.status === "WORKING") {
+          await ensureWhatsappSessionWebhook(
+            channel.whatsappDetails.sessionName,
+            channel.whatsappDetails.webhookUrl,
+          );
+
+          syncWhatsAppChats(
+            channel.id,
+            channel.whatsappDetails.sessionName,
+          ).catch((error) => {
+            console.error("[Channels] Erro no sync após reconnect:", error);
+          });
+        }
 
         await prisma.channel.update({
           where: { id: channel.id },

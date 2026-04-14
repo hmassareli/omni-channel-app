@@ -3,6 +3,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
 import { prisma } from "../../prisma";
+import { backfillContactTimelineEvents } from "../../services/message-timeline";
 
 // ============================================================================
 // CNPJ Lookup Service (CNPJA API)
@@ -117,7 +118,6 @@ function mapCNPJDataToCompany(
     sourceApi: "CNPJA" as const,
     apiUpdatedAt: new Date(),
     apparentWealthSigns: [],
-    wealthSigns: {},
   };
 }
 
@@ -142,8 +142,10 @@ const createCompanySchema = z.object({
   sector: z.string().trim().min(1).optional(),
   annualRevenue: z.string().trim().min(1).optional(),
   employeeCount: z.coerce.number().int().min(1).optional(),
+  creditLimit: z.coerce.number().positive().optional(),
+  billingAddress: z.string().trim().min(1).optional(),
+  shippingAddress: z.string().trim().min(1).optional(),
   apparentWealthSigns: z.array(z.string().trim().min(1)).optional(),
-  wealthSigns: z.record(z.string(), z.unknown()).optional(),
 });
 
 const updateCompanySchema = z.object({
@@ -152,8 +154,10 @@ const updateCompanySchema = z.object({
   sector: z.string().trim().min(1).optional(),
   annualRevenue: z.string().trim().min(1).optional(),
   employeeCount: z.coerce.number().int().min(1).nullable().optional(),
+  creditLimit: z.coerce.number().positive().nullable().optional(),
+  billingAddress: z.string().trim().min(1).nullable().optional(),
+  shippingAddress: z.string().trim().min(1).nullable().optional(),
   apparentWealthSigns: z.array(z.string().trim().min(1)).optional(),
-  wealthSigns: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ============================================================================
@@ -237,12 +241,14 @@ export async function companiesRoutes(app: FastifyInstance) {
     if (body.sector) companyData.sector = body.sector;
     if (body.annualRevenue) companyData.annualRevenue = body.annualRevenue;
     if (body.employeeCount) companyData.employeeCount = body.employeeCount;
+    if (body.creditLimit) companyData.creditLimit = body.creditLimit;
+    if (body.billingAddress) companyData.billingAddress = body.billingAddress;
+    if (body.shippingAddress) {
+      companyData.shippingAddress = body.shippingAddress;
+    }
     if (body.apparentWealthSigns) {
       companyData.apparentWealthSigns = body.apparentWealthSigns;
     }
-    if (body.wealthSigns)
-      (companyData as { wealthSigns?: Record<string, unknown> }).wealthSigns =
-        body.wealthSigns;
 
     const company = await prisma.company.create({
       data: { ...companyData, operationId: user.operationId },
@@ -328,6 +334,8 @@ export async function companiesRoutes(app: FastifyInstance) {
         where: { id: body.contactId },
         data: { companyId: id },
       });
+
+      await backfillContactTimelineEvents(body.contactId);
 
       return reply.status(201).send({ success: true });
     },

@@ -52,6 +52,9 @@ const CreateCompanyModal = ({ isOpen, onClose, onCreated }) => {
   const [sector, setSector] = useState("");
   const [annualRevenue, setAnnualRevenue] = useState("");
   const [employeeCount, setEmployeeCount] = useState("");
+  const [creditLimit, setCreditLimit] = useState("");
+  const [billingAddress, setBillingAddress] = useState("");
+  const [shippingAddress, setShippingAddress] = useState("");
   const [apparentWealthSigns, setApparentWealthSigns] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -74,6 +77,9 @@ const CreateCompanyModal = ({ isOpen, onClose, onCreated }) => {
         sector: sector || undefined,
         annualRevenue: annualRevenue || undefined,
         employeeCount: employeeCount ? Number(employeeCount) : undefined,
+        creditLimit: creditLimit ? Number(creditLimit) : undefined,
+        billingAddress: billingAddress || undefined,
+        shippingAddress: shippingAddress || undefined,
         apparentWealthSigns: apparentWealthSigns
           .split(/\r?\n|,/)
           .map((value) => value.trim())
@@ -85,6 +91,9 @@ const CreateCompanyModal = ({ isOpen, onClose, onCreated }) => {
       setSector("");
       setAnnualRevenue("");
       setEmployeeCount("");
+      setCreditLimit("");
+      setBillingAddress("");
+      setShippingAddress("");
       setApparentWealthSigns("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar empresa");
@@ -172,6 +181,47 @@ const CreateCompanyModal = ({ isOpen, onClose, onCreated }) => {
               placeholder="Ex.: 120"
               min="1"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Limite de credito
+            </label>
+            <input
+              type="number"
+              value={creditLimit}
+              onChange={(e) => setCreditLimit(e.target.value)}
+              placeholder="Ex.: 50000"
+              min="0"
+              step="0.01"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Endereco de cobranca
+            </label>
+            <textarea
+              value={billingAddress}
+              onChange={(e) => setBillingAddress(e.target.value)}
+              placeholder="Ex.: Av. Paulista, 1000, Bela Vista, Sao Paulo - SP"
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none resize-none"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Endereco de entrega
+            </label>
+            <textarea
+              value={shippingAddress}
+              onChange={(e) => setShippingAddress(e.target.value)}
+              placeholder="Ex.: Centro de distribuicao ou filial de recebimento"
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none resize-none"
             />
           </div>
 

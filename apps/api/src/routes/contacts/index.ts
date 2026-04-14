@@ -3,6 +3,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
 import { prisma } from "../../prisma";
+import { backfillContactTimelineEvents } from "../../services/message-timeline";
 
 // ============================================================================
 // Schemas
@@ -213,6 +214,8 @@ export async function contactsRoutes(app: FastifyInstance) {
         },
       });
 
+      await backfillContactTimelineEvents(updatedContact.id);
+
       return reply.send({ contact: updatedContact });
     },
   );
@@ -313,6 +316,8 @@ export async function contactsRoutes(app: FastifyInstance) {
           });
         }
 
+        await backfillContactTimelineEvents(updatedContact.id);
+
         return reply.send({
           contact: updatedContact,
           conversation,
@@ -348,6 +353,8 @@ export async function contactsRoutes(app: FastifyInstance) {
           conversations: true,
         },
       });
+
+      await backfillContactTimelineEvents(contact.id);
 
       return reply.status(201).send({
         contact,

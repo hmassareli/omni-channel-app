@@ -8,6 +8,7 @@ import {
   type IngestResult,
 } from "../../services/whatsapp-ingest";
 import { syncWhatsAppChats } from "../../services/whatsapp-sync";
+import { ensureWhatsappSessionWebhook } from "../../services/whatsapp-webhook";
 
 const webhookResponseSchema = z.object({
   conversationId: z.string().optional(),
@@ -134,6 +135,8 @@ async function handleSessionStatusWebhook(
   // Se acabou de conectar (WORKING), dispara sync dos chats
   if (payload.status === "WORKING") {
     console.log(`[Webhook] Sessão ${session} conectada - iniciando sync de chats...`);
+
+    await ensureWhatsappSessionWebhook(session, whatsappChannel.webhookUrl);
     
     // Executa sync em background para não bloquear o webhook
     syncWhatsAppChats(whatsappChannel.channelId, session)

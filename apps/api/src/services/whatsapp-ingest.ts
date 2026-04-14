@@ -8,6 +8,7 @@ import {
 import { z } from "zod";
 import { prisma } from "../prisma";
 import { scheduleConversationAnalysis } from "./conversation-analysis";
+import { createTimelineEventFromMessage } from "./message-timeline";
 
 const payloadSchema = z
   .object({
@@ -252,24 +253,19 @@ export async function ingestWhatsappMessage(
       sentAt,
     );
 
-    await prisma.timelineEvent.create({
-      data: {
-        contactId: contact.id,
+    await createTimelineEventFromMessage(prisma, {
+      message: {
+        id: message.id,
         conversationId: conversation.id,
-        type:
-          direction === MessageDirection.INBOUND
-            ? EventType.MESSAGE_RECEIVED
-            : EventType.MESSAGE_SENT,
+        contactId: contact.id,
+        direction,
         content: messageContent,
-        metadata: {
-          channel: channel.type,
-          whatsapp: {
-            rawRecordId: rawRecord.id,
-            externalMessageId: messagePayload.id,
-          },
-        },
-        occurredAt: sentAt,
+        sentAt,
+        externalId: messagePayload.id ?? null,
+        hasMedia: toBoolean(messagePayload.hasMedia),
       },
+      channelType: channel.type,
+      rawRecordId: rawRecord.id,
     });
 
     await prisma.rawWhatsappMessage.update({

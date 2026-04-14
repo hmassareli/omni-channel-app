@@ -899,6 +899,8 @@ export function CompanyTimeline() {
   const [timeline, setTimeline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("timeline");
+  const [expandedTimelineGroups, setExpandedTimelineGroups] = useState({});
+  const [expandedTimelineDays, setExpandedTimelineDays] = useState({});
   const [stages, setStages] = useState([]);
   const [channels, setChannels] = useState([]);
   const [agents, setAgents] = useState<api.AgentWithChannels[]>([]);
@@ -934,12 +936,70 @@ export function CompanyTimeline() {
     fetchData();
   }, [id]);
 
+  useEffect(() => {
+    const groups = groupTimelineEventsByDate(timeline?.events || []);
+
+    if (groups.length === 0) {
+      setExpandedTimelineGroups({});
+      setExpandedTimelineDays({});
+      return;
+    }
+
+    setExpandedTimelineGroups((current) => {
+      const next = {};
+      groups.forEach((group, index) => {
+        next[group.key] = current[group.key] ?? index === 0;
+      });
+      return next;
+    });
+
+    setExpandedTimelineDays((current) => {
+      const next = {};
+      groups.forEach((group) => {
+        next[group.key] = current[group.key] ?? false;
+      });
+      return next;
+    });
+  }, [timeline]);
+
   const formatCurrency = (value) => {
     if (!value) return "—";
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
     }).format(value);
+  };
+
+  const timelineGroups = groupTimelineEventsByDate(timeline?.events || []);
+
+  const toggleTimelineGroup = (groupKey) => {
+    setExpandedTimelineGroups((current) => ({
+      ...current,
+      [groupKey]: !current[groupKey],
+    }));
+  };
+
+  const toggleTimelineDayItems = (groupKey) => {
+    setExpandedTimelineDays((current) => ({
+      ...current,
+      [groupKey]: !current[groupKey],
+    }));
+  };
+
+  const formatCompanyAddress = () => {
+    if (!company) return "—";
+
+    const parts = [
+      company.addressStreet,
+      company.addressNumber,
+      company.addressDetails,
+      company.addressDistrict,
+      company.addressCity,
+      company.addressState,
+      company.addressZip,
+    ].filter(Boolean);
+
+    return parts.length > 0 ? parts.join(", ") : "—";
   };
 
   if (loading) {
@@ -997,7 +1057,20 @@ export function CompanyTimeline() {
             <InfoRow label="Status" value={company.status} />
             <InfoRow label="Setor" value={company.sector} />
             <InfoRow label="Porte" value={company.sizeText} />
+            <InfoRow label="Endereco" value={formatCompanyAddress()} />
+            <InfoRow
+              label="Endereco de cobranca"
+              value={company.billingAddress}
+            />
+            <InfoRow
+              label="Endereco de entrega"
+              value={company.shippingAddress}
+            />
             <InfoRow label="Faturamento anual" value={company.annualRevenue} />
+            <InfoRow
+              label="Limite de credito"
+              value={company.creditLimit ? formatCurrency(company.creditLimit) : null}
+            />
             <InfoRow
               label="Funcionarios"
               value={
@@ -1010,10 +1083,8 @@ export function CompanyTimeline() {
               label="Atividade Principal"
               value={company.mainActivityText}
             />
-            <InfoRow
-              label="Cidade"
-              value={`${company.addressCity} - ${company.addressState}`}
-            />
+            <InfoRow label="Cidade" value={company.addressCity} />
+            <InfoRow label="Estado" value={company.addressState} />
           </SidebarSection>
 
           <SidebarSection title="Sinais de riqueza aparente">
@@ -1065,14 +1136,6 @@ export function CompanyTimeline() {
               <p className="text-sm text-gray-500">Nenhuma oportunidade</p>
             )}
           </SidebarSection>
-
-          {company.wealthSigns && (
-            <SidebarSection title="Insights (WealthSigns)">
-              <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto">
-                {JSON.stringify(company.wealthSigns, null, 2)}
-              </pre>
-            </SidebarSection>
-          )}
         </aside>
 
         <div className="col-span-9">
@@ -1121,47 +1184,102 @@ export function CompanyTimeline() {
                 </span>
               </div>
 
-              <div className="bg-gray-100 rounded-lg p-4 mb-4 min-h-[400px] max-h-[500px] overflow-y-auto">
+              <div className="bg-gray-100 rounded-lg p-4 mb-4 min-h-100 max-h-125 overflow-y-auto">
                 {timeline.events.length === 0 ? (
                   <div className="flex items-center justify-center h-64 text-gray-500">
                     Nenhum evento na timeline
                   </div>
                 ) : (
-                  <>
-                    {timeline.events.map((event) => {
-                      if (
-                        event.type === "MESSAGE_SENT" ||
-                        event.type === "MESSAGE_RECEIVED"
-                      ) {
-                        return (
-                          <TimelineMessage
-                            key={event.id}
-                            sender={event.contact.name || "Contato"}
-                            time={event.occurredAt}
-                            message={event.content}
-                            isInbound={event.type === "MESSAGE_RECEIVED"}
-                            channelName={
-                              event.conversation?.channel.name || "Desconhecido"
-                            }
-                          />
-                        );
-                      }
+                  <div className="space-y-4">
+                    {timelineGroups.map((group) => {
+                      const isExpanded = !!expandedTimelineGroups[group.key];
+                      const showAllDayItems = !!expandedTimelineDays[group.key];
+                      const visibleEvents = showAllDayItems
+                        ? group.events
+                        : group.events.slice(0, 8);
+                      const hiddenCount = group.events.length - visibleEvents.length;
+
                       return (
-                        <TimelineEvent
-                          key={event.id}
-                          time={event.occurredAt}
-                          title={event.content}
-                          type={
-                            event.type === "STAGE_CHANGE"
-                              ? "stage_change"
-                              : event.type.includes("CREATE")
-                                ? "create"
-                                : "system"
-                          }
-                        />
+                        <section
+                          key={group.key}
+                          className="rounded-lg border border-gray-200 bg-white"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleTimelineGroup(group.key)}
+                            className="flex w-full items-center justify-between px-4 py-3 text-left"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800">
+                                {group.label}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {group.events.length} {group.events.length === 1 ? "evento" : "eventos"}
+                              </p>
+                            </div>
+                            <ChevronDown
+                              className={`h-4 w-4 text-gray-400 transition-transform ${
+                                isExpanded ? "" : "-rotate-90"
+                              }`}
+                            />
+                          </button>
+
+                          {isExpanded && (
+                            <div className="border-t border-gray-100 px-4 py-4">
+                              {visibleEvents.map((event) => {
+                                if (
+                                  event.type === "MESSAGE_SENT" ||
+                                  event.type === "MESSAGE_RECEIVED"
+                                ) {
+                                  return (
+                                    <TimelineMessage
+                                      key={event.id}
+                                      sender={event.contact.name || "Contato"}
+                                      time={event.occurredAt}
+                                      message={event.content}
+                                      isInbound={event.type === "MESSAGE_RECEIVED"}
+                                      channelName={
+                                        event.conversation?.channel.name || "Desconhecido"
+                                      }
+                                    />
+                                  );
+                                }
+
+                                return (
+                                  <TimelineEvent
+                                    key={event.id}
+                                    time={event.occurredAt}
+                                    title={event.content}
+                                    type={
+                                      event.type === "STAGE_CHANGE"
+                                        ? "stage_change"
+                                        : event.type.includes("CREATE")
+                                          ? "create"
+                                          : "system"
+                                    }
+                                  />
+                                );
+                              })}
+
+                              {group.events.length > 8 && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTimelineDayItems(group.key)}
+                                  className="mt-2 text-sm font-medium text-purple-600 hover:text-purple-700"
+                                >
+                                  {showAllDayItems
+                                    ? "Recolher eventos deste dia"
+                                    : `Mostrar mais ${hiddenCount} ${
+                                        hiddenCount === 1 ? "evento" : "eventos"
+                                      }`}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </section>
                       );
                     })}
-                  </>
+                  </div>
                 )}
               </div>
             </>
@@ -1282,4 +1400,49 @@ export function CompanyTimeline() {
       />
     </div>
   );
+}
+
+function groupTimelineEventsByDate(events) {
+  const groups = new Map();
+
+  for (const event of events) {
+    const date = new Date(event.occurredAt);
+    const key = date.toISOString().slice(0, 10);
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        label: formatTimelineGroupLabel(date),
+        events: [],
+      });
+    }
+
+    groups.get(key).events.push(event);
+  }
+
+  return Array.from(groups.values());
+}
+
+function formatTimelineGroupLabel(date) {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  const currentKey = today.toISOString().slice(0, 10);
+  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const dateKey = date.toISOString().slice(0, 10);
+
+  if (dateKey === currentKey) {
+    return "Hoje";
+  }
+
+  if (dateKey === yesterdayKey) {
+    return "Ontem";
+  }
+
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
 }

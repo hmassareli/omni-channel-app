@@ -69,11 +69,7 @@ Cria uma nova empresa a partir do CNPJ.
   "sector": "Serviços Jurídicos",
   "annualRevenue": "R$ 5M - R$ 10M",
   "employeeCount": 120,
-  "apparentWealthSigns": ["Escritório premium", "Equipe numerosa"],
-  "wealthSigns": {
-    "score": 85,
-    "notes": "Cliente VIP"
-  }
+  "apparentWealthSigns": ["Escritório premium", "Equipe numerosa"]
 }
 ```
 
@@ -158,7 +154,6 @@ Busca uma empresa pelo ID com detalhes completos.
         "person": { "id": "uuid", "name": "Nome do Sócio", "type": "person", "taxId": "000.000.000-00", "age": 35 }
       }
     ],
-    "wealthSigns": { "score": 85 },
     "contacts": [...],
     "opportunities": [...]
   }
@@ -180,11 +175,7 @@ Atualiza uma empresa.
   "sector": "Software",
   "annualRevenue": "R$ 10M - R$ 20M",
   "employeeCount": 200,
-  "apparentWealthSigns": ["Sede própria"],
-  "wealthSigns": {
-    "score": 90,
-    "notes": "Atualização do score"
-  }
+  "apparentWealthSigns": ["Sede própria"]
 }
 ```
 

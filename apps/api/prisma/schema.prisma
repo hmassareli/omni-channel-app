@@ -68,6 +68,9 @@ model Company {
   sector               String?
   annualRevenue        String?
   employeeCount        Int?
+  creditLimit          Decimal?
+  billingAddress       String?
+  shippingAddress      String?
   apparentWealthSigns  String[] @default([])
 
   // Endereço
@@ -102,7 +105,6 @@ model Company {
   // Relacionamentos
   contacts    Contact[]
   opportunities Opportunity[]
-  wealthSigns Json?
 
   @@map("companies")
 }

@@ -295,6 +295,9 @@ export async function createCompany(data: {
   sector?: string;
   annualRevenue?: string;
   employeeCount?: number;
+  creditLimit?: number;
+  billingAddress?: string;
+  shippingAddress?: string;
   apparentWealthSigns?: string[];
 }): Promise<Company> {
   const response = await apiRequest<{ company: Company }>(
@@ -331,6 +334,9 @@ export async function updateCompany(
       | "sector"
       | "annualRevenue"
       | "employeeCount"
+      | "creditLimit"
+      | "billingAddress"
+      | "shippingAddress"
       | "apparentWealthSigns"
     >
   >,
