@@ -53,7 +53,7 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
       if (!result.success) {
         app.log.warn(
           { body, error: result.error },
-          "Invalid session.status payload"
+          "Invalid session.status payload",
         );
         return reply
           .status(400)
@@ -72,7 +72,7 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
     if (!parseResult.success) {
       app.log.warn(
         { body, error: parseResult.error },
-        "Invalid message payload"
+        "Invalid message payload",
       );
       return reply.status(400).send({ error: "Invalid payload" });
     }
@@ -99,7 +99,7 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
 // ============================================================================
 
 async function handleSessionStatusWebhook(
-  data: z.infer<typeof sessionStatusWebhookSchema>
+  data: z.infer<typeof sessionStatusWebhookSchema>,
 ): Promise<void> {
   const { session, payload, me } = data;
 
@@ -129,19 +129,23 @@ async function handleSessionStatusWebhook(
   });
 
   console.log(
-    `[Webhook] Canal ${whatsappChannel.channel.name} atualizado: ${payload.status} -> ${newStatus}`
+    `[Webhook] Canal ${whatsappChannel.channel.name} atualizado: ${payload.status} -> ${newStatus}`,
   );
 
   // Se acabou de conectar (WORKING), dispara sync dos chats
   if (payload.status === "WORKING") {
-    console.log(`[Webhook] Sessão ${session} conectada - iniciando sync de chats...`);
+    console.log(
+      `[Webhook] Sessão ${session} conectada - iniciando sync de chats...`,
+    );
 
     await ensureWhatsappSessionWebhook(session, whatsappChannel.webhookUrl);
-    
+
     // Executa sync em background para não bloquear o webhook
     syncWhatsAppChats(whatsappChannel.channelId, session)
       .then((result) => {
-        console.log(`[Webhook] Sync concluído: ${result.totalChats} chats, ${result.newConversations} novos`);
+        console.log(
+          `[Webhook] Sync concluído: ${result.totalChats} chats, ${result.newConversations} novos`,
+        );
       })
       .catch((error) => {
         console.error(`[Webhook] Erro no sync:`, error);
@@ -150,7 +154,7 @@ async function handleSessionStatusWebhook(
 }
 
 function mapWahaStatusToChannelStatus(
-  wahaStatus: "STOPPED" | "STARTING" | "SCAN_QR_CODE" | "WORKING" | "FAILED"
+  wahaStatus: "STOPPED" | "STARTING" | "SCAN_QR_CODE" | "WORKING" | "FAILED",
 ): ChannelStatus {
   switch (wahaStatus) {
     case "WORKING":

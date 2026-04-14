@@ -1069,7 +1069,9 @@ export function CompanyTimeline() {
             <InfoRow label="Faturamento anual" value={company.annualRevenue} />
             <InfoRow
               label="Limite de credito"
-              value={company.creditLimit ? formatCurrency(company.creditLimit) : null}
+              value={
+                company.creditLimit ? formatCurrency(company.creditLimit) : null
+              }
             />
             <InfoRow
               label="Funcionarios"
@@ -1197,7 +1199,8 @@ export function CompanyTimeline() {
                       const visibleEvents = showAllDayItems
                         ? group.events
                         : group.events.slice(0, 8);
-                      const hiddenCount = group.events.length - visibleEvents.length;
+                      const hiddenCount =
+                        group.events.length - visibleEvents.length;
 
                       return (
                         <section
@@ -1214,7 +1217,10 @@ export function CompanyTimeline() {
                                 {group.label}
                               </p>
                               <p className="text-xs text-gray-500">
-                                {group.events.length} {group.events.length === 1 ? "evento" : "eventos"}
+                                {group.events.length}{" "}
+                                {group.events.length === 1
+                                  ? "evento"
+                                  : "eventos"}
                               </p>
                             </div>
                             <ChevronDown
@@ -1237,9 +1243,12 @@ export function CompanyTimeline() {
                                       sender={event.contact.name || "Contato"}
                                       time={event.occurredAt}
                                       message={event.content}
-                                      isInbound={event.type === "MESSAGE_RECEIVED"}
+                                      isInbound={
+                                        event.type === "MESSAGE_RECEIVED"
+                                      }
                                       channelName={
-                                        event.conversation?.channel.name || "Desconhecido"
+                                        event.conversation?.channel.name ||
+                                        "Desconhecido"
                                       }
                                     />
                                   );
@@ -1264,7 +1273,9 @@ export function CompanyTimeline() {
                               {group.events.length > 8 && (
                                 <button
                                   type="button"
-                                  onClick={() => toggleTimelineDayItems(group.key)}
+                                  onClick={() =>
+                                    toggleTimelineDayItems(group.key)
+                                  }
                                   className="mt-2 text-sm font-medium text-purple-600 hover:text-purple-700"
                                 >
                                   {showAllDayItems

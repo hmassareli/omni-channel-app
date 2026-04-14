@@ -201,7 +201,8 @@ async function syncSingleChat(
 
   const firstMessageAt = normalizedMessages[0]?.timestamp ?? new Date();
   const lastMessageAt =
-    normalizedMessages[normalizedMessages.length - 1]?.timestamp ?? firstMessageAt;
+    normalizedMessages[normalizedMessages.length - 1]?.timestamp ??
+    firstMessageAt;
   const firstInbound = normalizedMessages.find((message) => !message.fromMe);
   const firstOutbound = normalizedMessages.find((message) => message.fromMe);
 
@@ -236,7 +237,8 @@ async function syncSingleChat(
           conversation.lastMessageAt >= lastMessageAt
             ? conversation.lastMessageAt
             : lastMessageAt,
-        firstInboundMessageAt: conversation.firstInboundMessageAt ?? firstInbound?.timestamp,
+        firstInboundMessageAt:
+          conversation.firstInboundMessageAt ?? firstInbound?.timestamp,
         firstOutboundMessageAt:
           conversation.firstOutboundMessageAt ?? firstOutbound?.timestamp,
       },
@@ -260,10 +262,11 @@ async function syncSingleChat(
       .filter((value): value is string => Boolean(value)),
   );
   const existingFallbackKeys = new Set(
-    existingMessages.map((message) =>
-      `${message.direction}|${message.sentAt.toISOString()}|${
-        message.content ?? ""
-      }|${message.hasMedia}`,
+    existingMessages.map(
+      (message) =>
+        `${message.direction}|${message.sentAt.toISOString()}|${
+          message.content ?? ""
+        }|${message.hasMedia}`,
     ),
   );
 
@@ -330,7 +333,9 @@ async function loadChatMessages(sessionName: string, chatId: string) {
           payload: parsed as unknown as Prisma.JsonObject,
         };
       })
-      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+      .sort(
+        (left, right) => left.timestamp.getTime() - right.timestamp.getTime(),
+      );
   } catch (error) {
     console.error(`[Sync] Erro ao carregar mensagens de ${chatId}:`, error);
     return [];
