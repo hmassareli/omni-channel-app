@@ -28,6 +28,23 @@ const payloadSchema = z
       .object({
         messageTimestamp: z.number().optional(),
         remoteJidAlt: z.string().optional(),
+        Info: z
+          .object({
+            Chat: z.string().optional().nullable(),
+            Sender: z.string().optional().nullable(),
+            SenderAlt: z.string().optional().nullable(),
+            RecipientAlt: z.string().optional().nullable(),
+            IsGroup: z.boolean().optional(),
+            DeviceSentMeta: z
+              .object({
+                DestinationJID: z.string().optional().nullable(),
+              })
+              .partial()
+              .optional()
+              .nullable(),
+          })
+          .partial()
+          .optional(),
       })
       .partial()
       .optional(),
@@ -143,6 +160,73 @@ function buildSkipDiagnostics(payload: z.infer<typeof payloadSchema>) {
   };
 }
 
+function uniqueNonEmptyValues(values: Array<string | null | undefined>) {
+  return [
+    ...new Set(values.filter((value): value is string => Boolean(value?.trim()))),
+  ];
+}
+
+function buildSelfIdentifiers(
+  me: z.infer<typeof webhookBodySchema>["me"],
+  channelIdentifier: string,
+) {
+  const looseMe = (me ?? {}) as Record<string, unknown>;
+
+  return new Set(
+    uniqueNonEmptyValues([
+      channelIdentifier,
+      sanitizeWaId(me?.id),
+      sanitizeWaId(typeof looseMe.lid === "string" ? looseMe.lid : null),
+      sanitizeWaId(typeof looseMe.jid === "string" ? looseMe.jid : null),
+    ]),
+  );
+}
+
+function resolveContactIdentifier(
+  payload: z.infer<typeof payloadSchema>,
+  direction: MessageDirection,
+  selfIdentifiers: Set<string>,
+) {
+  const info = payload._data?.Info;
+
+  const candidates = direction === MessageDirection.OUTBOUND
+    ? [
+        { source: "payload.to", value: payload.to },
+        { source: "payload.chatId", value: payload.chatId },
+        { source: "_data.Info.RecipientAlt", value: info?.RecipientAlt },
+        { source: "_data.Info.Chat", value: info?.Chat },
+        { source: "payload.from", value: payload.from },
+      ]
+    : [
+        { source: "payload.from", value: payload.from },
+        { source: "payload.chatId", value: payload.chatId },
+        { source: "_data.remoteJidAlt", value: payload._data?.remoteJidAlt },
+        { source: "_data.Info.SenderAlt", value: info?.SenderAlt },
+        { source: "_data.Info.Chat", value: info?.Chat },
+      ];
+
+  const evaluatedCandidates = candidates.map((candidate) => {
+    const sanitized = sanitizeWaId(candidate.value);
+    return {
+      source: candidate.source,
+      raw: candidate.value ?? null,
+      sanitized,
+      isSelf: sanitized ? selfIdentifiers.has(sanitized) : false,
+    };
+  });
+
+  const selected = evaluatedCandidates.find(
+    (candidate) => candidate.sanitized && !candidate.isSelf,
+  );
+
+  return {
+    rawContactId: selected?.raw ?? null,
+    contactWaId: selected?.sanitized ?? null,
+    selectedSource: selected?.source ?? null,
+    candidates: evaluatedCandidates,
+  };
+}
+
 export async function ingestWhatsappMessage(
   payload: WhatsappWebhookPayload,
 ): Promise<IngestResult> {
@@ -214,11 +298,15 @@ export async function ingestWhatsappMessage(
     ? MessageDirection.OUTBOUND
     : MessageDirection.INBOUND;
 
-  const rawContactId = messagePayload.fromMe
-    ? (messagePayload.to ?? messagePayload.chatId)
-    : messagePayload.from;
+  const selfIdentifiers = buildSelfIdentifiers(me, channelIdentifier);
+  const resolvedContact = resolveContactIdentifier(
+    messagePayload,
+    direction,
+    selfIdentifiers,
+  );
 
-  let contactWaId = sanitizeWaId(rawContactId);
+  const rawContactId = resolvedContact.rawContactId;
+  let contactWaId = resolvedContact.contactWaId;
 
   logWebhookDebug("ingest:contact-resolution", {
     sessionName: sessionName ?? null,
@@ -226,6 +314,9 @@ export async function ingestWhatsappMessage(
     direction,
     rawContactId: rawContactId ?? null,
     sanitizedContactWaId: contactWaId,
+    selectedSource: resolvedContact.selectedSource,
+    selfIdentifiers: [...selfIdentifiers],
+    candidates: resolvedContact.candidates,
     fromMe: messagePayload.fromMe,
     from: messagePayload.from ?? null,
     to: messagePayload.to ?? null,
