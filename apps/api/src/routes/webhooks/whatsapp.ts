@@ -75,8 +75,10 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
         success: result.success,
         session: typeof body.session === "string" ? body.session : null,
         status:
-          typeof body.payload === "object" && body.payload !== null && "status" in body.payload
-            ? (body.payload as { status?: unknown }).status ?? null
+          typeof body.payload === "object" &&
+          body.payload !== null &&
+          "status" in body.payload
+            ? ((body.payload as { status?: unknown }).status ?? null)
             : null,
       });
 

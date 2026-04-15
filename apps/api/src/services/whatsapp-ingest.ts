@@ -1,6 +1,5 @@
 import {
   ChannelType,
-  EventType,
   IdentityType,
   MessageDirection,
   Prisma,
@@ -67,9 +66,7 @@ function logWebhookDebug(stage: string, details: Record<string, unknown>) {
     return;
   }
 
-  console.log(
-    `[WebhookDebug] ${stage} ${JSON.stringify(details, null, 2)}`,
-  );
+  console.log(`[WebhookDebug] ${stage} ${JSON.stringify(details, null, 2)}`);
 }
 
 function previewText(value?: string | null, limit = 160) {
@@ -102,8 +99,8 @@ function buildSkipDiagnostics(payload: z.infer<typeof payloadSchema>) {
 
   const isGroupChat = Boolean(
     hasParticipant ||
-      hasDefaultSubgroupFlag ||
-      (payload.id && (idHasNewsletter || idHasBroadcast)),
+    hasDefaultSubgroupFlag ||
+    (payload.id && (idHasNewsletter || idHasBroadcast)),
   );
 
   const reason = !hasContent
