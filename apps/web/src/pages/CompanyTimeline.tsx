@@ -162,6 +162,27 @@ const TimelineEvent = ({ time, title, type }) => (
   </div>
 );
 
+const TimelineInteractionHeader = ({
+  contactName,
+  channelName,
+  startedAt,
+  eventCount,
+}) => (
+  <div className="flex items-center justify-between gap-4 border-b border-gray-100 bg-gray-50 px-4 py-3">
+    <div>
+      <p className="text-sm font-semibold text-gray-800">
+        {contactName || "Contato"}
+      </p>
+      <p className="text-xs text-gray-500">
+        {channelName || "Canal desconhecido"} • {eventCount} {eventCount === 1 ? "item" : "itens"}
+      </p>
+    </div>
+    <p className="text-xs text-gray-400">
+      Início: {new Date(startedAt).toLocaleString("pt-BR")}
+    </p>
+  </div>
+);
+
 // ============================================================================
 // Modals
 // ============================================================================
@@ -894,13 +915,16 @@ const CreateContactModal = ({
 // ============================================================================
 
 export function CompanyTimeline() {
+  const interactionPreviewLimit = 15;
   const id = getCompanyIdFromUrl();
   const [company, setCompany] = useState(null);
   const [timeline, setTimeline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("timeline");
   const [expandedTimelineGroups, setExpandedTimelineGroups] = useState({});
-  const [expandedTimelineDays, setExpandedTimelineDays] = useState({});
+  const [expandedInteractionBlocks, setExpandedInteractionBlocks] = useState(
+    {},
+  );
   const [stages, setStages] = useState([]);
   const [channels, setChannels] = useState([]);
   const [agents, setAgents] = useState<api.AgentWithChannels[]>([]);
@@ -941,7 +965,7 @@ export function CompanyTimeline() {
 
     if (groups.length === 0) {
       setExpandedTimelineGroups({});
-      setExpandedTimelineDays({});
+      setExpandedInteractionBlocks({});
       return;
     }
 
@@ -953,10 +977,12 @@ export function CompanyTimeline() {
       return next;
     });
 
-    setExpandedTimelineDays((current) => {
+    setExpandedInteractionBlocks((current) => {
       const next = {};
       groups.forEach((group) => {
-        next[group.key] = current[group.key] ?? false;
+        group.interactions.forEach((interaction, index) => {
+          next[interaction.key] = current[interaction.key] ?? index === 0;
+        });
       });
       return next;
     });
@@ -979,10 +1005,10 @@ export function CompanyTimeline() {
     }));
   };
 
-  const toggleTimelineDayItems = (groupKey) => {
-    setExpandedTimelineDays((current) => ({
+  const toggleInteractionBlock = (interactionKey) => {
+    setExpandedInteractionBlocks((current) => ({
       ...current,
-      [groupKey]: !current[groupKey],
+      [interactionKey]: !current[interactionKey],
     }));
   };
 
@@ -1195,12 +1221,6 @@ export function CompanyTimeline() {
                   <div className="space-y-4">
                     {timelineGroups.map((group) => {
                       const isExpanded = !!expandedTimelineGroups[group.key];
-                      const showAllDayItems = !!expandedTimelineDays[group.key];
-                      const visibleEvents = showAllDayItems
-                        ? group.events
-                        : group.events.slice(0, 8);
-                      const hiddenCount =
-                        group.events.length - visibleEvents.length;
 
                       return (
                         <section
@@ -1217,10 +1237,11 @@ export function CompanyTimeline() {
                                 {group.label}
                               </p>
                               <p className="text-xs text-gray-500">
-                                {group.events.length}{" "}
-                                {group.events.length === 1
-                                  ? "evento"
-                                  : "eventos"}
+                                {group.interactions.length}{" "}
+                                {group.interactions.length === 1
+                                  ? "interação"
+                                  : "interações"}{" "}
+                                • {group.eventsCount} {group.eventsCount === 1 ? "evento" : "eventos"}
                               </p>
                             </div>
                             <ChevronDown
@@ -1231,60 +1252,89 @@ export function CompanyTimeline() {
                           </button>
 
                           {isExpanded && (
-                            <div className="border-t border-gray-100 px-4 py-4">
-                              {visibleEvents.map((event) => {
-                                if (
-                                  event.type === "MESSAGE_SENT" ||
-                                  event.type === "MESSAGE_RECEIVED"
-                                ) {
-                                  return (
-                                    <TimelineMessage
-                                      key={event.id}
-                                      sender={event.contact.name || "Contato"}
-                                      time={event.occurredAt}
-                                      message={event.content}
-                                      isInbound={
-                                        event.type === "MESSAGE_RECEIVED"
-                                      }
-                                      channelName={
-                                        event.conversation?.channel.name ||
-                                        "Desconhecido"
-                                      }
-                                    />
-                                  );
-                                }
+                            <div className="border-t border-gray-100 px-4 py-4 space-y-4">
+                              {group.interactions.map((interaction) => {
+                                const isInteractionExpanded =
+                                  !!expandedInteractionBlocks[interaction.key];
+                                const visibleEvents = isInteractionExpanded
+                                  ? interaction.events
+                                  : interaction.events.slice(
+                                      0,
+                                      interactionPreviewLimit,
+                                    );
+                                const hiddenCount =
+                                  interaction.events.length - visibleEvents.length;
 
                                 return (
-                                  <TimelineEvent
-                                    key={event.id}
-                                    time={event.occurredAt}
-                                    title={event.content}
-                                    type={
-                                      event.type === "STAGE_CHANGE"
-                                        ? "stage_change"
-                                        : event.type.includes("CREATE")
-                                          ? "create"
-                                          : "system"
-                                    }
-                                  />
+                                  <section
+                                    key={interaction.key}
+                                    className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+                                  >
+                                    <TimelineInteractionHeader
+                                      contactName={interaction.contactName}
+                                      channelName={interaction.channelName}
+                                      startedAt={interaction.startedAt}
+                                      eventCount={interaction.events.length}
+                                    />
+
+                                    <div className="px-4 py-4">
+                                      {visibleEvents.map((event) => {
+                                        if (
+                                          event.type === "MESSAGE_SENT" ||
+                                          event.type === "MESSAGE_RECEIVED"
+                                        ) {
+                                          return (
+                                            <TimelineMessage
+                                              key={event.id}
+                                              sender={event.contact.name || "Contato"}
+                                              time={event.occurredAt}
+                                              message={event.content}
+                                              isInbound={
+                                                event.type === "MESSAGE_RECEIVED"
+                                              }
+                                              channelName={
+                                                event.conversation?.channel.name ||
+                                                "Desconhecido"
+                                              }
+                                            />
+                                          );
+                                        }
+
+                                        return (
+                                          <TimelineEvent
+                                            key={event.id}
+                                            time={event.occurredAt}
+                                            title={event.content}
+                                            type={
+                                              event.type === "STAGE_CHANGE"
+                                                ? "stage_change"
+                                                : event.type.includes("CREATE")
+                                                  ? "create"
+                                                  : "system"
+                                            }
+                                          />
+                                        );
+                                      })}
+
+                                      {interaction.events.length > interactionPreviewLimit && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            toggleInteractionBlock(interaction.key)
+                                          }
+                                          className="mt-2 text-sm font-medium text-purple-600 hover:text-purple-700"
+                                        >
+                                          {isInteractionExpanded
+                                            ? "Recolher interação"
+                                            : `Mostrar mais ${hiddenCount} ${
+                                                hiddenCount === 1 ? "item" : "itens"
+                                              }`}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </section>
                                 );
                               })}
-
-                              {group.events.length > 8 && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    toggleTimelineDayItems(group.key)
-                                  }
-                                  className="mt-2 text-sm font-medium text-purple-600 hover:text-purple-700"
-                                >
-                                  {showAllDayItems
-                                    ? "Recolher eventos deste dia"
-                                    : `Mostrar mais ${hiddenCount} ${
-                                        hiddenCount === 1 ? "evento" : "eventos"
-                                      }`}
-                                </button>
-                              )}
                             </div>
                           )}
                         </section>
@@ -1414,29 +1464,60 @@ export function CompanyTimeline() {
 }
 
 function groupTimelineEventsByDate(events) {
+  const sortedEvents = [...events].sort(
+    (left, right) =>
+      new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime(),
+  );
   const groups = new Map();
 
-  for (const event of events) {
+  for (const event of sortedEvents) {
     const date = new Date(event.occurredAt);
     const key = date.toISOString().slice(0, 10);
+    const interactionKey = `${event.contact?.id || "unknown"}:${event.conversation?.id || "none"}`;
 
     if (!groups.has(key)) {
       groups.set(key, {
         key,
         label: formatTimelineGroupLabel(date),
+        eventsCount: 0,
+        interactions: new Map(),
+      });
+    }
+
+    const group = groups.get(key);
+    group.eventsCount += 1;
+
+    if (!group.interactions.has(interactionKey)) {
+      group.interactions.set(interactionKey, {
+        key: interactionKey,
+        contactName: event.contact?.name || "Contato",
+        channelName: event.conversation?.channel.name || "Desconhecido",
+        startedAt: event.occurredAt,
         events: [],
       });
     }
 
-    groups.get(key).events.push(event);
+    group.interactions.get(interactionKey).events.push(event);
   }
 
   return Array.from(groups.values()).map((group) => ({
     ...group,
-    events: [...group.events].sort(
-      (left, right) =>
-        new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime(),
-    ),
+    interactions: (
+      Array.from(group.interactions.values()) as Array<{
+        key: string;
+        contactName: string;
+        channelName: string;
+        startedAt: string;
+        events: Array<(typeof events)[number]>;
+      }>
+    ).map((interaction) => ({
+      ...interaction,
+      events: [...interaction.events].sort(
+        (left, right) =>
+          new Date(left.occurredAt).getTime() -
+          new Date(right.occurredAt).getTime(),
+      ),
+    })),
   }));
 }
 
