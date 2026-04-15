@@ -59,6 +59,93 @@ export type IngestResult =
   | { skipped: true; reason: string }
   | { skipped?: false; conversationId: string; messageId: string };
 
+const webhookDebugEnabled =
+  process.env.WHATSAPP_WEBHOOK_DEBUG?.toLowerCase() === "true";
+
+function logWebhookDebug(stage: string, details: Record<string, unknown>) {
+  if (!webhookDebugEnabled) {
+    return;
+  }
+
+  console.log(
+    `[WebhookDebug] ${stage} ${JSON.stringify(details, null, 2)}`,
+  );
+}
+
+function previewText(value?: string | null, limit = 160) {
+  if (!value) {
+    return "";
+  }
+
+  return value.length <= limit ? value : `${value.slice(0, limit)}...`;
+}
+
+function endsWithJid(value: string | undefined, suffix: string) {
+  return Boolean(value?.toLowerCase().endsWith(suffix));
+}
+
+function buildSkipDiagnostics(payload: z.infer<typeof payloadSchema>) {
+  const hasTextBody = Boolean(payload.body && payload.body.trim().length > 0);
+  const hasMedia = toBoolean(payload.hasMedia);
+  const hasContent = hasTextBody || hasMedia;
+  const hasParticipant = Boolean(payload.participant);
+  const hasDefaultSubgroupFlag = payload.isDefaultSubgroup !== undefined;
+  const idHasNewsletter = Boolean(payload.id?.includes("@newsletter"));
+  const idHasBroadcast = Boolean(payload.id?.includes("broadcast"));
+  const chatIdIsGroup = endsWithJid(payload.chatId, "@g.us");
+  const fromIsGroup = endsWithJid(payload.from, "@g.us");
+  const toIsGroup = endsWithJid(payload.to, "@g.us");
+  const chatIdIsDirect = endsWithJid(payload.chatId, "@c.us");
+  const fromIsDirect = endsWithJid(payload.from, "@c.us");
+  const toIsDirect = endsWithJid(payload.to, "@c.us");
+  const isStatusBroadcast = endsWithJid(payload.chatId, "status@broadcast");
+
+  const isGroupChat = Boolean(
+    hasParticipant ||
+      hasDefaultSubgroupFlag ||
+      (payload.id && (idHasNewsletter || idHasBroadcast)),
+  );
+
+  const reason = !hasContent
+    ? "empty-message"
+    : isGroupChat
+      ? "group-message"
+      : null;
+
+  return {
+    reason,
+    fields: {
+      id: payload.id ?? null,
+      chatId: payload.chatId ?? null,
+      from: payload.from ?? null,
+      to: payload.to ?? null,
+      participant: payload.participant ?? null,
+      isDefaultSubgroup: payload.isDefaultSubgroup ?? null,
+      type: payload.type ?? null,
+      fromMe: payload.fromMe,
+      bodyPreview: previewText(payload.body),
+      hasMediaRaw: payload.hasMedia ?? null,
+    },
+    booleans: {
+      hasTextBody,
+      hasMedia,
+      hasContent,
+      hasParticipant,
+      hasDefaultSubgroupFlag,
+      idHasNewsletter,
+      idHasBroadcast,
+      chatIdIsGroup,
+      fromIsGroup,
+      toIsGroup,
+      chatIdIsDirect,
+      fromIsDirect,
+      toIsDirect,
+      isStatusBroadcast,
+      wouldBeGroupByJid: chatIdIsGroup || fromIsGroup || toIsGroup,
+    },
+  };
+}
+
 export async function ingestWhatsappMessage(
   payload: WhatsappWebhookPayload,
 ): Promise<IngestResult> {
@@ -68,12 +155,30 @@ export async function ingestWhatsappMessage(
   );
   const { me, payload: messagePayload, session: sessionName } = envelope;
 
+  logWebhookDebug("ingest:start", {
+    sessionName: sessionName ?? null,
+    me: me ?? null,
+    envelope,
+  });
+
   const channelIdentifier = sanitizeWaId(me?.id);
   if (!channelIdentifier) {
+    logWebhookDebug("ingest:skip-missing-channel", {
+      sessionName: sessionName ?? null,
+      me: me ?? null,
+      messagePayload,
+    });
     return { skipped: true, reason: "missing-channel-identifier" };
   }
 
-  const skipResult = shouldSkipMessage(messagePayload);
+  const skipDiagnostics = buildSkipDiagnostics(messagePayload);
+  logWebhookDebug("ingest:filter-evaluation", {
+    sessionName: sessionName ?? null,
+    channelIdentifier,
+    ...skipDiagnostics,
+  });
+
+  const skipResult = skipDiagnostics.reason;
   if (skipResult) {
     await prisma.rawWhatsappMessage.create({
       data: {
@@ -81,6 +186,13 @@ export async function ingestWhatsappMessage(
         payload: payload as Prisma.JsonObject,
         processed: true,
       },
+    });
+
+    logWebhookDebug("ingest:skipped", {
+      sessionName: sessionName ?? null,
+      channelIdentifier,
+      reason: skipResult,
+      ...skipDiagnostics,
     });
 
     return { skipped: true, reason: skipResult };
@@ -94,6 +206,13 @@ export async function ingestWhatsappMessage(
     },
   });
 
+  logWebhookDebug("ingest:raw-saved", {
+    rawRecordId: rawRecord.id,
+    wahaId: rawRecord.wahaId,
+    sessionName: sessionName ?? null,
+    channelIdentifier,
+  });
+
   const direction = messagePayload.fromMe
     ? MessageDirection.OUTBOUND
     : MessageDirection.INBOUND;
@@ -104,10 +223,33 @@ export async function ingestWhatsappMessage(
 
   let contactWaId = sanitizeWaId(rawContactId);
 
+  logWebhookDebug("ingest:contact-resolution", {
+    sessionName: sessionName ?? null,
+    channelIdentifier,
+    direction,
+    rawContactId: rawContactId ?? null,
+    sanitizedContactWaId: contactWaId,
+    fromMe: messagePayload.fromMe,
+    from: messagePayload.from ?? null,
+    to: messagePayload.to ?? null,
+    chatId: messagePayload.chatId ?? null,
+  });
+
   if (!contactWaId) {
     await prisma.rawWhatsappMessage.update({
       where: { id: rawRecord.id },
       data: { processed: true },
+    });
+
+    logWebhookDebug("ingest:skip-missing-contact", {
+      rawRecordId: rawRecord.id,
+      sessionName: sessionName ?? null,
+      channelIdentifier,
+      rawContactId: rawContactId ?? null,
+      fromMe: messagePayload.fromMe,
+      from: messagePayload.from ?? null,
+      to: messagePayload.to ?? null,
+      chatId: messagePayload.chatId ?? null,
     });
 
     return { skipped: true, reason: "missing-contact-identifier" };
@@ -127,10 +269,30 @@ export async function ingestWhatsappMessage(
         `[Ingest] LID ${originalLid} não resolvido — armazenado como LID`,
       );
     }
+
+    logWebhookDebug("ingest:lid-resolution", {
+      rawRecordId: rawRecord.id,
+      sessionName: sessionName ?? null,
+      originalLid,
+      remoteJidAlt: messagePayload._data?.remoteJidAlt ?? null,
+      resolvedContactWaId: contactWaId,
+    });
   }
 
   const sentAt = resolveTimestamp(messagePayload);
   const messageContent = resolveContent(messagePayload);
+
+  logWebhookDebug("ingest:message-normalized", {
+    rawRecordId: rawRecord.id,
+    sessionName: sessionName ?? null,
+    channelIdentifier,
+    contactWaId,
+    direction,
+    sentAt: sentAt.toISOString(),
+    contentPreview: previewText(messageContent),
+    hasMedia: toBoolean(messagePayload.hasMedia),
+    externalId: messagePayload.id ?? null,
+  });
 
   // Tenta encontrar o channel pelo externalIdentifier (número do WhatsApp)
   let channel = await prisma.channel.findFirst({
@@ -159,6 +321,14 @@ export async function ingestWhatsappMessage(
       console.log(
         `[Ingest] Channel ${channel.name} atualizado com externalIdentifier: ${channelIdentifier}`,
       );
+
+      logWebhookDebug("ingest:channel-found-by-session", {
+        rawRecordId: rawRecord.id,
+        sessionName,
+        channelId: channel.id,
+        channelName: channel.name,
+        channelIdentifier,
+      });
     }
   }
 
@@ -174,6 +344,25 @@ export async function ingestWhatsappMessage(
           ? ({ apiKey: messagePayload.apiKey } satisfies Prisma.JsonObject)
           : undefined,
       },
+    });
+
+    logWebhookDebug("ingest:channel-created-orphan", {
+      rawRecordId: rawRecord.id,
+      sessionName: sessionName ?? null,
+      channelId: channel.id,
+      channelName: channel.name,
+      channelIdentifier,
+    });
+  }
+
+  if (channel) {
+    logWebhookDebug("ingest:channel-selected", {
+      rawRecordId: rawRecord.id,
+      sessionName: sessionName ?? null,
+      channelId: channel.id,
+      channelName: channel.name,
+      channelIdentifier,
+      operationId: channel.operationId ?? null,
     });
   }
 
@@ -200,7 +389,22 @@ export async function ingestWhatsappMessage(
       },
       include: { contact: true },
     });
+
+    logWebhookDebug("ingest:identity-created", {
+      rawRecordId: rawRecord.id,
+      contactId: contact.id,
+      identityId: identity.id,
+      contactWaId,
+    });
   }
+
+  logWebhookDebug("ingest:identity-selected", {
+    rawRecordId: rawRecord.id,
+    contactId: identity.contact.id,
+    identityId: identity.id,
+    contactWaId,
+    companyId: identity.contact.companyId ?? null,
+  });
 
   const contact = identity.contact;
 
@@ -228,7 +432,23 @@ export async function ingestWhatsappMessage(
         needsAnalysis: true,
       },
     });
+
+    logWebhookDebug("ingest:conversation-created", {
+      rawRecordId: rawRecord.id,
+      conversationId: conversation.id,
+      contactId: contact.id,
+      channelId: channel.id,
+      externalId: messagePayload.chatId ?? null,
+    });
   }
+
+  logWebhookDebug("ingest:conversation-selected", {
+    rawRecordId: rawRecord.id,
+    conversationId: conversation.id,
+    contactId: contact.id,
+    channelId: channel.id,
+    externalId: conversation.externalId ?? null,
+  });
 
   try {
     const message = await prisma.message.create({
@@ -247,11 +467,33 @@ export async function ingestWhatsappMessage(
       },
     });
 
+    logWebhookDebug("ingest:message-created", {
+      rawRecordId: rawRecord.id,
+      messageId: message.id,
+      conversationId: conversation.id,
+      contactId: contact.id,
+      direction,
+      externalId: message.externalId ?? null,
+      sentAt: message.sentAt.toISOString(),
+    });
+
     const conversationUpdate = await updateConversationTimestamps(
       conversation,
       direction,
       sentAt,
     );
+
+    logWebhookDebug("ingest:conversation-updated", {
+      rawRecordId: rawRecord.id,
+      conversationId: conversationUpdate.id,
+      firstMessageAt: conversationUpdate.firstMessageAt.toISOString(),
+      lastMessageAt: conversationUpdate.lastMessageAt.toISOString(),
+      firstInboundMessageAt:
+        conversationUpdate.firstInboundMessageAt?.toISOString() ?? null,
+      firstOutboundMessageAt:
+        conversationUpdate.firstOutboundMessageAt?.toISOString() ?? null,
+      needsAnalysis: conversationUpdate.needsAnalysis,
+    });
 
     await createTimelineEventFromMessage(prisma, {
       message: {
@@ -268,14 +510,38 @@ export async function ingestWhatsappMessage(
       rawRecordId: rawRecord.id,
     });
 
+    logWebhookDebug("ingest:timeline-created", {
+      rawRecordId: rawRecord.id,
+      conversationId: conversation.id,
+      contactId: contact.id,
+      direction,
+      channelType: channel.type,
+    });
+
     await prisma.rawWhatsappMessage.update({
       where: { id: rawRecord.id },
       data: { processed: true },
     });
 
+    logWebhookDebug("ingest:raw-processed", {
+      rawRecordId: rawRecord.id,
+      processed: true,
+    });
+
     if (process.env.GROQ_API_KEY) {
       scheduleConversationAnalysis(conversationUpdate.id);
+
+      logWebhookDebug("ingest:analysis-scheduled", {
+        rawRecordId: rawRecord.id,
+        conversationId: conversationUpdate.id,
+      });
     }
+
+    logWebhookDebug("ingest:completed", {
+      rawRecordId: rawRecord.id,
+      conversationId: conversationUpdate.id,
+      messageId: message.id,
+    });
 
     return { conversationId: conversationUpdate.id, messageId: message.id };
   } catch (error) {
@@ -287,8 +553,28 @@ export async function ingestWhatsappMessage(
         where: { id: rawRecord.id },
         data: { processed: true },
       });
+
+      logWebhookDebug("ingest:duplicate-message", {
+        rawRecordId: rawRecord.id,
+        reason: "duplicate-message",
+        prismaCode: error.code,
+        target: error.meta?.target ?? null,
+      });
+
       return { skipped: true, reason: "duplicate-message" };
     }
+
+    logWebhookDebug("ingest:error", {
+      rawRecordId: rawRecord.id,
+      error:
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+          : { value: String(error) },
+    });
 
     throw error;
   }
@@ -349,32 +635,6 @@ function resolveContent(payload: z.infer<typeof payloadSchema>): string {
 
   const text = payload.body ?? "";
   return text.trim();
-}
-
-function shouldSkipMessage(
-  payload: z.infer<typeof payloadSchema>,
-): string | null {
-  const hasContent = Boolean(
-    (payload.body && payload.body.trim().length > 0) ||
-    toBoolean(payload.hasMedia),
-  );
-
-  if (!hasContent) {
-    return "empty-message";
-  }
-
-  const isGroupChat = Boolean(
-    payload.participant ||
-    payload.isDefaultSubgroup !== undefined ||
-    (payload.id &&
-      (payload.id.includes("@newsletter") || payload.id.includes("broadcast"))),
-  );
-
-  if (isGroupChat) {
-    return "group-message";
-  }
-
-  return null;
 }
 
 async function updateConversationTimestamps(
@@ -442,6 +702,11 @@ async function updateConversationTimestamps(
     data,
     select: {
       id: true,
+      firstMessageAt: true,
+      lastMessageAt: true,
+      firstInboundMessageAt: true,
+      firstOutboundMessageAt: true,
+      needsAnalysis: true,
     },
   });
 }

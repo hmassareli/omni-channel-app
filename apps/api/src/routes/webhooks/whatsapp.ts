@@ -17,6 +17,19 @@ const webhookResponseSchema = z.object({
   reason: z.string().optional(),
 });
 
+const webhookDebugEnabled =
+  process.env.WHATSAPP_WEBHOOK_DEBUG?.toLowerCase() === "true";
+
+function logWebhookRouteDebug(stage: string, details: Record<string, unknown>) {
+  if (!webhookDebugEnabled) {
+    return;
+  }
+
+  console.log(
+    `[WebhookDebug] route:${stage} ${JSON.stringify(details, null, 2)}`,
+  );
+}
+
 // Schema para webhook de session.status do WAHA
 const sessionStatusWebhookSchema = z.object({
   event: z.literal("session.status"),
@@ -46,19 +59,46 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
   app.post("/whatsapp", async (request, reply) => {
     const body = request.body as Record<string, unknown>;
 
+    logWebhookRouteDebug("received", {
+      body,
+      bodyKeys: Object.keys(body ?? {}),
+      event: typeof body.event === "string" ? body.event : null,
+      hasPayload: Object.prototype.hasOwnProperty.call(body ?? {}, "payload"),
+      hasBodyWrapper: Object.prototype.hasOwnProperty.call(body ?? {}, "body"),
+    });
+
     // Verifica se é um evento de session.status
     if (body.event === "session.status") {
       const result = sessionStatusWebhookSchema.safeParse(body);
+
+      logWebhookRouteDebug("session-status-parse", {
+        success: result.success,
+        session: typeof body.session === "string" ? body.session : null,
+        status:
+          typeof body.payload === "object" && body.payload !== null && "status" in body.payload
+            ? (body.payload as { status?: unknown }).status ?? null
+            : null,
+      });
 
       if (!result.success) {
         app.log.warn(
           { body, error: result.error },
           "Invalid session.status payload",
         );
+        logWebhookRouteDebug("session-status-invalid", {
+          error: result.error.flatten(),
+          body,
+        });
         return reply
           .status(400)
           .send({ error: "Invalid session.status payload" });
       }
+
+      logWebhookRouteDebug("session-status-valid", {
+        session: result.data.session,
+        status: result.data.payload.status,
+        me: result.data.me ?? null,
+      });
 
       await handleSessionStatusWebhook(result.data);
       return reply
@@ -69,15 +109,28 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
     // Evento de mensagem
     const parseResult = whatsappWebhookSchema.safeParse(body);
 
+    logWebhookRouteDebug("message-parse", {
+      success: parseResult.success,
+      body,
+    });
+
     if (!parseResult.success) {
       app.log.warn(
         { body, error: parseResult.error },
         "Invalid message payload",
       );
+      logWebhookRouteDebug("message-invalid", {
+        error: parseResult.error.flatten(),
+        body,
+      });
       return reply.status(400).send({ error: "Invalid payload" });
     }
 
     const result = await ingestWhatsappMessage(parseResult.data);
+
+    logWebhookRouteDebug("message-result", {
+      result,
+    });
 
     if ("skipped" in result && result.skipped) {
       return reply.status(202).send({
