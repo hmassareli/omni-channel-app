@@ -174,7 +174,8 @@ const TimelineInteractionHeader = ({
         {contactName || "Contato"}
       </p>
       <p className="text-xs text-gray-500">
-        {channelName || "Canal desconhecido"} • {eventCount} {eventCount === 1 ? "item" : "itens"}
+        {channelName || "Canal desconhecido"} • {eventCount}{" "}
+        {eventCount === 1 ? "item" : "itens"}
       </p>
     </div>
     <p className="text-xs text-gray-400">
@@ -1241,7 +1242,8 @@ export function CompanyTimeline() {
                                 {group.interactions.length === 1
                                   ? "interação"
                                   : "interações"}{" "}
-                                • {group.eventsCount} {group.eventsCount === 1 ? "evento" : "eventos"}
+                                • {group.eventsCount}{" "}
+                                {group.eventsCount === 1 ? "evento" : "eventos"}
                               </p>
                             </div>
                             <ChevronDown
@@ -1263,7 +1265,8 @@ export function CompanyTimeline() {
                                       interactionPreviewLimit,
                                     );
                                 const hiddenCount =
-                                  interaction.events.length - visibleEvents.length;
+                                  interaction.events.length -
+                                  visibleEvents.length;
 
                                 return (
                                   <section
@@ -1286,15 +1289,18 @@ export function CompanyTimeline() {
                                           return (
                                             <TimelineMessage
                                               key={event.id}
-                                              sender={event.contact.name || "Contato"}
+                                              sender={
+                                                event.contact.name || "Contato"
+                                              }
                                               time={event.occurredAt}
                                               message={event.content}
                                               isInbound={
-                                                event.type === "MESSAGE_RECEIVED"
+                                                event.type ===
+                                                "MESSAGE_RECEIVED"
                                               }
                                               channelName={
-                                                event.conversation?.channel.name ||
-                                                "Desconhecido"
+                                                event.conversation?.channel
+                                                  .name || "Desconhecido"
                                               }
                                             />
                                           );
@@ -1316,18 +1322,23 @@ export function CompanyTimeline() {
                                         );
                                       })}
 
-                                      {interaction.events.length > interactionPreviewLimit && (
+                                      {interaction.events.length >
+                                        interactionPreviewLimit && (
                                         <button
                                           type="button"
                                           onClick={() =>
-                                            toggleInteractionBlock(interaction.key)
+                                            toggleInteractionBlock(
+                                              interaction.key,
+                                            )
                                           }
                                           className="mt-2 text-sm font-medium text-purple-600 hover:text-purple-700"
                                         >
                                           {isInteractionExpanded
                                             ? "Recolher interação"
                                             : `Mostrar mais ${hiddenCount} ${
-                                                hiddenCount === 1 ? "item" : "itens"
+                                                hiddenCount === 1
+                                                  ? "item"
+                                                  : "itens"
                                               }`}
                                         </button>
                                       )}
@@ -1466,7 +1477,8 @@ export function CompanyTimeline() {
 function groupTimelineEventsByDate(events) {
   const sortedEvents = [...events].sort(
     (left, right) =>
-      new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime(),
+      new Date(left.occurredAt).getTime() -
+      new Date(right.occurredAt).getTime(),
   );
   const groups = new Map();
 
