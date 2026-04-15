@@ -12,9 +12,9 @@ import { createTimelineEventFromMessage } from "./message-timeline";
 const payloadSchema = z
   .object({
     id: z.string().optional(),
-    chatId: z.string().optional(),
-    from: z.string().optional(),
-    to: z.string().optional(),
+    chatId: z.string().optional().nullable(),
+    from: z.string().optional().nullable(),
+    to: z.string().optional().nullable(),
     timestamp: z.union([z.string(), z.number()]).optional(),
     messageTimestamp: z.number().optional(),
     fromMe: z.boolean(),
@@ -77,7 +77,7 @@ function previewText(value?: string | null, limit = 160) {
   return value.length <= limit ? value : `${value.slice(0, limit)}...`;
 }
 
-function endsWithJid(value: string | undefined, suffix: string) {
+function endsWithJid(value: string | null | undefined, suffix: string) {
   return Boolean(value?.toLowerCase().endsWith(suffix));
 }
 
