@@ -201,10 +201,10 @@ function resolveContactIdentifier(
           { source: "payload.from", value: payload.from },
         ]
       : [
+          { source: "_data.Info.SenderAlt", value: info?.SenderAlt },
+          { source: "_data.remoteJidAlt", value: payload._data?.remoteJidAlt },
           { source: "payload.from", value: payload.from },
           { source: "payload.chatId", value: payload.chatId },
-          { source: "_data.remoteJidAlt", value: payload._data?.remoteJidAlt },
-          { source: "_data.Info.SenderAlt", value: info?.SenderAlt },
           { source: "_data.Info.Chat", value: info?.Chat },
         ];
 
@@ -677,7 +677,8 @@ function sanitizeWaId(value?: string | null): string | null {
   }
 
   const [identifier] = value.split("@");
-  return identifier?.trim() || null;
+  const normalized = identifier?.split(":")[0]?.trim();
+  return normalized || null;
 }
 
 function toBoolean(value: unknown): boolean {

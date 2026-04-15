@@ -1431,7 +1431,13 @@ function groupTimelineEventsByDate(events) {
     groups.get(key).events.push(event);
   }
 
-  return Array.from(groups.values());
+  return Array.from(groups.values()).map((group) => ({
+    ...group,
+    events: [...group.events].sort(
+      (left, right) =>
+        new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime(),
+    ),
+  }));
 }
 
 function formatTimelineGroupLabel(date) {
