@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { EventType, Prisma } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
@@ -370,6 +370,12 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Estágio não encontrado" });
       }
 
+      // Busca o nome do estágio atual para o log
+      const previousStage = await prisma.stage.findUnique({
+        where: { id: existing.stageId },
+        select: { name: true },
+      });
+
       const opportunity = await prisma.opportunity.update({
         where: { id },
         data: { stageId: body.stageId },
@@ -385,6 +391,31 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
           },
         },
       });
+
+      // Cria TimelineEvent de STAGE_CHANGE para todos os contatos da empresa
+      const companyContacts = await prisma.contact.findMany({
+        where: { companyId: existing.companyId },
+        select: { id: true },
+      });
+
+      if (companyContacts.length > 0) {
+        const content = `Oportunidade movida de "${previousStage?.name || "—"}" para "${stage.name}"`;
+
+        await prisma.timelineEvent.createMany({
+          data: companyContacts.map((contact) => ({
+            contactId: contact.id,
+            type: EventType.STAGE_CHANGE,
+            content,
+            metadata: {
+              opportunityId: id,
+              fromStageId: existing.stageId,
+              toStageId: body.stageId,
+              fromStageName: previousStage?.name,
+              toStageName: stage.name,
+            },
+          })),
+        });
+      }
 
       return reply.send({ opportunity });
     },
