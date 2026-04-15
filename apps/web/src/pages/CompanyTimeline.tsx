@@ -1255,6 +1255,27 @@ export function CompanyTimeline() {
 
                           {isExpanded && (
                             <div className="border-t border-gray-100 px-4 py-4 space-y-4">
+                              {/* Eventos soltos (STAGE_CHANGE, NOTE, etc) */}
+                              {group.standaloneEvents?.length > 0 && (
+                                <div className="space-y-1">
+                                  {group.standaloneEvents.map((event) => (
+                                    <TimelineEvent
+                                      key={event.id}
+                                      time={event.occurredAt}
+                                      title={event.content}
+                                      type={
+                                        event.type === "STAGE_CHANGE"
+                                          ? "stage_change"
+                                          : event.type?.includes?.("CREATE")
+                                            ? "create"
+                                            : "system"
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Blocos de interação */}
                               {group.interactions.map((interaction) => {
                                 const isInteractionExpanded =
                                   !!expandedInteractionBlocks[interaction.key];
@@ -1485,7 +1506,6 @@ function groupTimelineEventsByDate(events) {
   for (const event of sortedEvents) {
     const date = new Date(event.occurredAt);
     const key = date.toISOString().slice(0, 10);
-    const interactionKey = `${event.contact?.id || "unknown"}:${event.conversation?.id || "none"}`;
 
     if (!groups.has(key)) {
       groups.set(key, {
@@ -1493,11 +1513,20 @@ function groupTimelineEventsByDate(events) {
         label: formatTimelineGroupLabel(date),
         eventsCount: 0,
         interactions: new Map(),
+        standaloneEvents: [],
       });
     }
 
     const group = groups.get(key);
     group.eventsCount += 1;
+
+    // Eventos sem conversationId ficam soltos no dia
+    if (!event.conversation?.id) {
+      group.standaloneEvents.push(event);
+      continue;
+    }
+
+    const interactionKey = `${event.contact?.id || "unknown"}:${event.conversation.id}`;
 
     if (!group.interactions.has(interactionKey)) {
       group.interactions.set(interactionKey, {

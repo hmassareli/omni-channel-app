@@ -284,6 +284,7 @@ interface TimelineGroup {
   label: string;
   eventsCount: number;
   interactions: InteractionBlock[];
+  standaloneEvents: Array<Record<string, unknown>>;
 }
 
 function groupTimelineEventsByDate(
@@ -301,6 +302,7 @@ function groupTimelineEventsByDate(
       label: string;
       eventsCount: number;
       interactions: Map<string, InteractionBlock>;
+      standaloneEvents: Array<Record<string, unknown>>;
     }
   >();
 
@@ -312,7 +314,6 @@ function groupTimelineEventsByDate(
       id?: string;
       channel?: { name?: string };
     } | null;
-    const interactionKey = `${contact?.id || "unknown"}:${conversation?.id || "none"}`;
 
     if (!groups.has(key)) {
       groups.set(key, {
@@ -320,11 +321,20 @@ function groupTimelineEventsByDate(
         label: formatTimelineGroupLabel(date),
         eventsCount: 0,
         interactions: new Map(),
+        standaloneEvents: [],
       });
     }
 
     const group = groups.get(key)!;
     group.eventsCount += 1;
+
+    // Eventos sem conversationId (STAGE_CHANGE, NOTE, etc) ficam soltos no dia
+    if (!conversation?.id) {
+      group.standaloneEvents.push(event);
+      continue;
+    }
+
+    const interactionKey = `${contact?.id || "unknown"}:${conversation.id}`;
 
     if (!group.interactions.has(interactionKey)) {
       group.interactions.set(interactionKey, {
@@ -687,6 +697,31 @@ export function OpportunityTimeline() {
 
                       {isExpanded && (
                         <div className="border-t border-gray-100 px-4 py-4 space-y-4">
+                          {/* Eventos soltos (STAGE_CHANGE, NOTE, etc) */}
+                          {group.standaloneEvents.length > 0 && (
+                            <div className="space-y-1">
+                              {group.standaloneEvents.map(
+                                (event: Record<string, unknown>) => (
+                                  <TimelineEvent
+                                    key={event.id as string}
+                                    time={event.occurredAt as string}
+                                    title={event.content as string}
+                                    type={
+                                      (event.type as string) === "STAGE_CHANGE"
+                                        ? "stage_change"
+                                        : (event.type as string).includes(
+                                              "CREATE",
+                                            )
+                                          ? "create"
+                                          : "system"
+                                    }
+                                  />
+                                ),
+                              )}
+                            </div>
+                          )}
+
+                          {/* Blocos de interação (mensagens agrupadas por contato+conversa) */}
                           {group.interactions.map((interaction) => {
                             const isInteractionExpanded =
                               !!expandedInteractionBlocks[interaction.key];

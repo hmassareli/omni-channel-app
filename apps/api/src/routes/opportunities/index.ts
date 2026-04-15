@@ -392,18 +392,19 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
         },
       });
 
-      // Cria TimelineEvent de STAGE_CHANGE para todos os contatos da empresa
-      const companyContacts = await prisma.contact.findMany({
+      // Cria TimelineEvent de STAGE_CHANGE (um único evento, no primeiro contato da empresa)
+      const firstContact = await prisma.contact.findFirst({
         where: { companyId: existing.companyId },
         select: { id: true },
+        orderBy: { createdAt: "asc" },
       });
 
-      if (companyContacts.length > 0) {
+      if (firstContact) {
         const content = `Oportunidade movida de "${previousStage?.name || "—"}" para "${stage.name}"`;
 
-        await prisma.timelineEvent.createMany({
-          data: companyContacts.map((contact) => ({
-            contactId: contact.id,
+        await prisma.timelineEvent.create({
+          data: {
+            contactId: firstContact.id,
             type: EventType.STAGE_CHANGE,
             content,
             metadata: {
@@ -413,7 +414,7 @@ export async function opportunitiesRoutes(app: FastifyInstance) {
               fromStageName: previousStage?.name,
               toStageName: stage.name,
             },
-          })),
+          },
         });
       }
 
