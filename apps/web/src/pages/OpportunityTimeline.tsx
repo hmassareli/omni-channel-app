@@ -248,10 +248,144 @@ const TimelineEvent = ({
 );
 
 // ============================================================================
+// Timeline grouping helpers
+// ============================================================================
+
+function formatTimelineGroupLabel(date: Date): string {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  const currentKey = today.toISOString().slice(0, 10);
+  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const dateKey = date.toISOString().slice(0, 10);
+
+  if (dateKey === currentKey) return "Hoje";
+  if (dateKey === yesterdayKey) return "Ontem";
+
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+interface InteractionBlock {
+  key: string;
+  contactName: string;
+  channelName: string;
+  startedAt: string;
+  latestAt: string;
+  events: Array<Record<string, unknown>>;
+}
+
+interface TimelineGroup {
+  key: string;
+  label: string;
+  eventsCount: number;
+  interactions: InteractionBlock[];
+}
+
+function groupTimelineEventsByDate(events: Array<Record<string, unknown>>): TimelineGroup[] {
+  const sortedEvents = [...events].sort(
+    (left, right) =>
+      new Date(left.occurredAt as string).getTime() -
+      new Date(right.occurredAt as string).getTime(),
+  );
+  const groups = new Map<string, { key: string; label: string; eventsCount: number; interactions: Map<string, InteractionBlock> }>();
+
+  for (const event of sortedEvents) {
+    const date = new Date(event.occurredAt as string);
+    const key = date.toISOString().slice(0, 10);
+    const contact = event.contact as { id?: string; name?: string } | null;
+    const conversation = event.conversation as { id?: string; channel?: { name?: string } } | null;
+    const interactionKey = `${contact?.id || "unknown"}:${conversation?.id || "none"}`;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        label: formatTimelineGroupLabel(date),
+        eventsCount: 0,
+        interactions: new Map(),
+      });
+    }
+
+    const group = groups.get(key)!;
+    group.eventsCount += 1;
+
+    if (!group.interactions.has(interactionKey)) {
+      group.interactions.set(interactionKey, {
+        key: interactionKey,
+        contactName: contact?.name || "Contato",
+        channelName: conversation?.channel?.name || "Desconhecido",
+        startedAt: event.occurredAt as string,
+        latestAt: event.occurredAt as string,
+        events: [],
+      });
+    }
+
+    const interaction = group.interactions.get(interactionKey)!;
+    interaction.events.push(event);
+    interaction.latestAt = event.occurredAt as string;
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      interactions: Array.from(group.interactions.values())
+        .map((interaction) => ({
+          ...interaction,
+          events: [...interaction.events].sort(
+            (left, right) =>
+              new Date(left.occurredAt as string).getTime() -
+              new Date(right.occurredAt as string).getTime(),
+          ),
+        }))
+        .sort(
+          (left, right) =>
+            new Date(right.latestAt).getTime() -
+            new Date(left.latestAt).getTime(),
+        ),
+    }))
+    .sort(
+      (left, right) =>
+        new Date(right.key).getTime() - new Date(left.key).getTime(),
+    );
+}
+
+const TimelineInteractionHeader = ({
+  contactName,
+  channelName,
+  startedAt,
+  eventCount,
+}: {
+  contactName: string;
+  channelName: string;
+  startedAt: string;
+  eventCount: number;
+}) => (
+  <div className="flex items-center justify-between gap-4 border-b border-gray-100 bg-gray-50 px-4 py-3">
+    <div>
+      <p className="text-sm font-semibold text-gray-800">
+        {contactName || "Contato"}
+      </p>
+      <p className="text-xs text-gray-500">
+        {channelName || "Canal desconhecido"} • {eventCount}{" "}
+        {eventCount === 1 ? "item" : "itens"}
+      </p>
+    </div>
+    <p className="text-xs text-gray-400">
+      Início: {new Date(startedAt).toLocaleString("pt-BR")}
+    </p>
+  </div>
+);
+
+// ============================================================================
 // Main Component
 // ============================================================================
 
 export function OpportunityTimeline() {
+  const interactionPreviewLimit = 15;
   const id = getOpportunityIdFromUrl();
   const [opportunity, setOpportunity] = useState<api.OpportunityDetail | null>(
     null,
@@ -261,6 +395,8 @@ export function OpportunityTimeline() {
   const [stages, setStages] = useState<api.Stage[]>([]);
   const [loading, setLoading] = useState(true);
   const [movingStage, setMovingStage] = useState(false);
+  const [expandedTimelineGroups, setExpandedTimelineGroups] = useState<Record<string, boolean>>({});
+  const [expandedInteractionBlocks, setExpandedInteractionBlocks] = useState<Record<string, boolean>>({});
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -284,6 +420,50 @@ export function OpportunityTimeline() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const groups = groupTimelineEventsByDate(timeline?.events || []);
+
+    if (groups.length === 0) {
+      setExpandedTimelineGroups({});
+      setExpandedInteractionBlocks({});
+      return;
+    }
+
+    setExpandedTimelineGroups((current) => {
+      const next: Record<string, boolean> = {};
+      groups.forEach((group, index) => {
+        next[group.key] = current[group.key] ?? index === 0;
+      });
+      return next;
+    });
+
+    setExpandedInteractionBlocks((current) => {
+      const next: Record<string, boolean> = {};
+      groups.forEach((group) => {
+        group.interactions.forEach((interaction, index) => {
+          next[interaction.key] = current[interaction.key] ?? index === 0;
+        });
+      });
+      return next;
+    });
+  }, [timeline]);
+
+  const toggleTimelineGroup = (groupKey: string) => {
+    setExpandedTimelineGroups((current) => ({
+      ...current,
+      [groupKey]: !current[groupKey],
+    }));
+  };
+
+  const toggleInteractionBlock = (interactionKey: string) => {
+    setExpandedInteractionBlocks((current) => ({
+      ...current,
+      [interactionKey]: !current[interactionKey],
+    }));
+  };
+
+  const timelineGroups = groupTimelineEventsByDate(timeline?.events || []);
 
   const handleStageClick = async (stageId: string) => {
     if (!opportunity || stageId === opportunity.stageId || movingStage) return;
@@ -454,46 +634,142 @@ export function OpportunityTimeline() {
                 </div>
               </div>
             ) : (
-              timeline.events
-                .slice()
-                .sort(
-                  (a, b) =>
-                    new Date(a.occurredAt).getTime() -
-                    new Date(b.occurredAt).getTime(),
-                )
-                .map((event) => {
-                  if (
-                    event.type === "MESSAGE_SENT" ||
-                    event.type === "MESSAGE_RECEIVED"
-                  ) {
-                    return (
-                      <TimelineMessage
-                        key={event.id}
-                        sender={event.contact.name || "Contato"}
-                        time={event.occurredAt}
-                        message={event.content}
-                        isInbound={event.type === "MESSAGE_RECEIVED"}
-                        channelName={
-                          event.conversation?.channel.name || undefined
-                        }
-                      />
-                    );
-                  }
+              <div className="space-y-4">
+                {timelineGroups.map((group) => {
+                  const isExpanded = !!expandedTimelineGroups[group.key];
+
                   return (
-                    <TimelineEvent
-                      key={event.id}
-                      time={event.occurredAt}
-                      title={event.content}
-                      type={
-                        event.type === "STAGE_CHANGE"
-                          ? "stage_change"
-                          : event.type.includes("CREATE")
-                            ? "create"
-                            : "system"
-                      }
-                    />
+                    <section
+                      key={group.key}
+                      className="rounded-lg border border-gray-200 bg-white"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleTimelineGroup(group.key)}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">
+                            {group.label}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {group.interactions.length}{" "}
+                            {group.interactions.length === 1
+                              ? "interação"
+                              : "interações"}{" "}
+                            • {group.eventsCount}{" "}
+                            {group.eventsCount === 1 ? "evento" : "eventos"}
+                          </p>
+                        </div>
+                        <ChevronDown
+                          className={`h-4 w-4 text-gray-400 transition-transform ${
+                            isExpanded ? "" : "-rotate-90"
+                          }`}
+                        />
+                      </button>
+
+                      {isExpanded && (
+                        <div className="border-t border-gray-100 px-4 py-4 space-y-4">
+                          {group.interactions.map((interaction) => {
+                            const isInteractionExpanded =
+                              !!expandedInteractionBlocks[interaction.key];
+                            const visibleEvents = isInteractionExpanded
+                              ? interaction.events
+                              : interaction.events.slice(
+                                  0,
+                                  interactionPreviewLimit,
+                                );
+                            const hiddenCount =
+                              interaction.events.length -
+                              visibleEvents.length;
+
+                            return (
+                              <section
+                                key={interaction.key}
+                                className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+                              >
+                                <TimelineInteractionHeader
+                                  contactName={interaction.contactName}
+                                  channelName={interaction.channelName}
+                                  startedAt={interaction.startedAt}
+                                  eventCount={interaction.events.length}
+                                />
+
+                                <div className="px-4 py-4">
+                                  {visibleEvents.map((event: Record<string, unknown>) => {
+                                    const eventType = event.type as string;
+                                    const eventContact = event.contact as { name?: string } | null;
+                                    const eventConversation = event.conversation as { channel?: { name?: string } } | null;
+
+                                    if (
+                                      eventType === "MESSAGE_SENT" ||
+                                      eventType === "MESSAGE_RECEIVED"
+                                    ) {
+                                      return (
+                                        <TimelineMessage
+                                          key={event.id as string}
+                                          sender={
+                                            eventContact?.name || "Contato"
+                                          }
+                                          time={event.occurredAt as string}
+                                          message={event.content as string}
+                                          isInbound={
+                                            eventType === "MESSAGE_RECEIVED"
+                                          }
+                                          channelName={
+                                            eventConversation?.channel?.name ||
+                                            undefined
+                                          }
+                                        />
+                                      );
+                                    }
+
+                                    return (
+                                      <TimelineEvent
+                                        key={event.id as string}
+                                        time={event.occurredAt as string}
+                                        title={event.content as string}
+                                        type={
+                                          eventType === "STAGE_CHANGE"
+                                            ? "stage_change"
+                                            : eventType.includes("CREATE")
+                                              ? "create"
+                                              : "system"
+                                        }
+                                      />
+                                    );
+                                  })}
+
+                                  {interaction.events.length >
+                                    interactionPreviewLimit && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        toggleInteractionBlock(
+                                          interaction.key,
+                                        )
+                                      }
+                                      className="mt-2 text-sm font-medium text-purple-600 hover:text-purple-700"
+                                    >
+                                      {isInteractionExpanded
+                                        ? "Recolher interação"
+                                        : `Mostrar mais ${hiddenCount} ${
+                                            hiddenCount === 1
+                                              ? "item"
+                                              : "itens"
+                                          }`}
+                                    </button>
+                                  )}
+                                </div>
+                              </section>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
                   );
-                })
+                })}
+              </div>
             )}
           </div>
 
