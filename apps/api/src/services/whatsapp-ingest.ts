@@ -162,7 +162,9 @@ function buildSkipDiagnostics(payload: z.infer<typeof payloadSchema>) {
 
 function uniqueNonEmptyValues(values: Array<string | null | undefined>) {
   return [
-    ...new Set(values.filter((value): value is string => Boolean(value?.trim()))),
+    ...new Set(
+      values.filter((value): value is string => Boolean(value?.trim())),
+    ),
   ];
 }
 
@@ -189,21 +191,22 @@ function resolveContactIdentifier(
 ) {
   const info = payload._data?.Info;
 
-  const candidates = direction === MessageDirection.OUTBOUND
-    ? [
-        { source: "payload.to", value: payload.to },
-        { source: "payload.chatId", value: payload.chatId },
-        { source: "_data.Info.RecipientAlt", value: info?.RecipientAlt },
-        { source: "_data.Info.Chat", value: info?.Chat },
-        { source: "payload.from", value: payload.from },
-      ]
-    : [
-        { source: "payload.from", value: payload.from },
-        { source: "payload.chatId", value: payload.chatId },
-        { source: "_data.remoteJidAlt", value: payload._data?.remoteJidAlt },
-        { source: "_data.Info.SenderAlt", value: info?.SenderAlt },
-        { source: "_data.Info.Chat", value: info?.Chat },
-      ];
+  const candidates =
+    direction === MessageDirection.OUTBOUND
+      ? [
+          { source: "payload.to", value: payload.to },
+          { source: "payload.chatId", value: payload.chatId },
+          { source: "_data.Info.RecipientAlt", value: info?.RecipientAlt },
+          { source: "_data.Info.Chat", value: info?.Chat },
+          { source: "payload.from", value: payload.from },
+        ]
+      : [
+          { source: "payload.from", value: payload.from },
+          { source: "payload.chatId", value: payload.chatId },
+          { source: "_data.remoteJidAlt", value: payload._data?.remoteJidAlt },
+          { source: "_data.Info.SenderAlt", value: info?.SenderAlt },
+          { source: "_data.Info.Chat", value: info?.Chat },
+        ];
 
   const evaluatedCandidates = candidates.map((candidate) => {
     const sanitized = sanitizeWaId(candidate.value);
