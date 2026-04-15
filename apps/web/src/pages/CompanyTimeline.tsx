@@ -1505,32 +1505,47 @@ function groupTimelineEventsByDate(events) {
         contactName: event.contact?.name || "Contato",
         channelName: event.conversation?.channel.name || "Desconhecido",
         startedAt: event.occurredAt,
+        latestAt: event.occurredAt,
         events: [],
       });
     }
 
-    group.interactions.get(interactionKey).events.push(event);
+    const interaction = group.interactions.get(interactionKey);
+    interaction.events.push(event);
+    interaction.latestAt = event.occurredAt;
   }
 
-  return Array.from(groups.values()).map((group) => ({
-    ...group,
-    interactions: (
-      Array.from(group.interactions.values()) as Array<{
-        key: string;
-        contactName: string;
-        channelName: string;
-        startedAt: string;
-        events: Array<(typeof events)[number]>;
-      }>
-    ).map((interaction) => ({
-      ...interaction,
-      events: [...interaction.events].sort(
-        (left, right) =>
-          new Date(left.occurredAt).getTime() -
-          new Date(right.occurredAt).getTime(),
-      ),
-    })),
-  }));
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      interactions: (
+        Array.from(group.interactions.values()) as Array<{
+          key: string;
+          contactName: string;
+          channelName: string;
+          startedAt: string;
+          latestAt: string;
+          events: Array<(typeof events)[number]>;
+        }>
+      )
+        .map((interaction) => ({
+          ...interaction,
+          events: [...interaction.events].sort(
+            (left, right) =>
+              new Date(left.occurredAt).getTime() -
+              new Date(right.occurredAt).getTime(),
+          ),
+        }))
+        .sort(
+          (left, right) =>
+            new Date(right.latestAt).getTime() -
+            new Date(left.latestAt).getTime(),
+        ),
+    }))
+    .sort(
+      (left, right) =>
+        new Date(right.key).getTime() - new Date(left.key).getTime(),
+    );
 }
 
 function formatTimelineGroupLabel(date) {
