@@ -14,6 +14,8 @@ cd "$(dirname "$0")/.."
 BRANCH="${BRANCH:-refactor/helpdesk-core}"
 WEB_URL="${WEB_URL:-https://crm-crm-web.lnyx9r.easypanel.host}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-$(openssl rand -hex 24)}"
+# ONLY=crm-web (ou crm-api) dispara só o deploy desse serviço, sem mexer em variáveis/branch
+ONLY="${ONLY:-all}"
 
 # No WSL, o alias "contabo" fica no config do Windows:
 #   SSH_OPTS="-F /mnt/c/Users/Henrique/.ssh/config" bash scripts/easypanel-deploy.sh
@@ -36,40 +38,46 @@ def post(path, payload):
         headers={"content-type": "application/json", "Authorization": key})
     return json.load(urllib.request.urlopen(req, timeout=120))
 
-branch, web_url, secret = sys.stdin.readline().split()
+branch, web_url, secret, only = sys.stdin.readline().split()
 api = {"projectName": "crm", "serviceName": "crm-api"}
 web = {"projectName": "crm", "serviceName": "crm-web"}
 
-# 1. variáveis do crm-api (preserva o resto)
-lines = get("services.app.inspectService", api)["env"].replace("\r", "").split("\n")
-want = {"WEBHOOK_SECRET": secret, "CORS_ORIGINS": web_url, "WHATSAPP_WEBHOOK_DEBUG": "false"}
-out, seen = [], set()
-for l in lines:
-    k = l.split("=", 1)[0]
-    if k in want:
-        out.append(k + "=" + want[k]); seen.add(k)
-    else:
-        out.append(l)
-out += [k + "=" + v for k, v in want.items() if k not in seen]
-post("services.app.updateEnv", {**api, "env": "\n".join(out).strip("\n")})
-print("crm-api: variáveis atualizadas")
+if only == "all":
+    # 1. variáveis do crm-api (preserva o resto)
+    lines = get("services.app.inspectService", api)["env"].replace("\r", "").split("\n")
+    want = {"WEBHOOK_SECRET": secret, "CORS_ORIGINS": web_url, "WHATSAPP_WEBHOOK_DEBUG": "false"}
+    out, seen = [], set()
+    for l in lines:
+        k = l.split("=", 1)[0]
+        if k in want:
+            out.append(k + "=" + want[k]); seen.add(k)
+        else:
+            out.append(l)
+    out += [k + "=" + v for k, v in want.items() if k not in seen]
+    post("services.app.updateEnv", {**api, "env": "\n".join(out).strip("\n")})
+    print("crm-api: variáveis atualizadas")
 
-# 2. branch de origem
-for svc in (api, web):
-    cur = get("services.app.inspectService", svc)["source"]
-    post("services.app.updateSourceGithub", {**svc, "owner": cur["owner"], "repo": cur["repo"],
-        "ref": branch, "path": cur.get("path", "/"), "autoDeploy": cur.get("autoDeploy", False)})
-    print(svc["serviceName"] + ": origem ->", branch)
+    # 2. branch de origem
+    for svc in (api, web):
+        cur = get("services.app.inspectService", svc)["source"]
+        post("services.app.updateSourceGithub", {**svc, "owner": cur["owner"], "repo": cur["repo"],
+            "ref": branch, "path": cur.get("path", "/"), "autoDeploy": cur.get("autoDeploy", False)})
+        print(svc["serviceName"] + ": origem ->", branch)
 
-# 3. deploy (api primeiro)
+# 3. deploy (api primeiro). A chamada fica aberta durante o build: timeout é esperado.
 for svc in (api, web):
-    post("services.app.deployService", svc)
+    if only not in ("all", svc["serviceName"]):
+        continue
+    try:
+        post("services.app.deployService", svc)
+    except Exception as e:
+        print(svc["serviceName"] + ": chamada encerrada (" + type(e).__name__ + "); o build segue no servidor")
     print(svc["serviceName"] + ": deploy disparado")
 EOF
 )
 
 B64=$(printf '%s' "$PY" | base64 | tr -d '\n')
-printf '%s\n%s\n' "$KEY" "$BRANCH $WEB_URL $WEBHOOK_SECRET" \
+printf '%s\n%s\n' "$KEY" "$BRANCH $WEB_URL $WEBHOOK_SECRET $ONLY" \
   | ssh $SSH_OPTS contabo "python3 -c 'import sys,base64; key=sys.stdin.readline().strip(); exec(base64.b64decode(\"$B64\"))'"
 
 echo
