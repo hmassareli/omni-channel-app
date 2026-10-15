@@ -47,3 +47,14 @@ paleta neutra (slate) + UMA cor de destaque, grade de 8px, bordas 1px de baixo c
 cantos `rounded-lg`, fonte Inter, hierarquia tipográfica clara, light mode primeiro, estados vazios e skeletons.
 Inbox em 3 painéis (lista | conversa | contexto da empresa/contato), navegação lateral estreita com ícones Lucide.
 Componentes base em `src/components/ui/`: Button, Input, Select, Badge, Card, Avatar, Tabs, Dialog, Skeleton, EmptyState.
+
+## Notas de implementação da mesa (backend)
+- `POST /conversations/:id/assign` aceita também `queueId` (`{ agentId?, queueId? }`, ao menos um; só ADMIN/MANAGER mexe em fila). AGENT só assume para si (se sem responsável) ou devolve a própria (`agentId: null`).
+- `GET /conversations` aceita ainda `channelId` e `contactId`; `limit` padrão 30 (máx. 100). `nextCursor` é opaco.
+- Visibilidade do AGENT: conversas atribuídas a ele + não atribuídas sem fila ou de filas das quais é membro. Fora disso: 404.
+- `GET /queues` -> `{ queues: [{ id, name, members:[{id,name,avatarUrl}] }] }` (qualquer papel); `POST /queues` -> 201 `{ queue }`; `PUT /queues/:id` e `PUT /queues/:id/members` -> `{ queue }`; `DELETE` -> 204. Mutações só ADMIN/MANAGER. Nome duplicado -> 409.
+- `GET /metrics/desk` só ADMIN/MANAGER. Totais/filas são o retrato atual; tempos, CSAT, byAgent e volumeByDay usam o período (padrão: 30 dias).
+- SSE: eventos `message.created` e `conversation.updated`, `data` = JSON sem `operationId`; heartbeat `: ping` a cada 25s.
+- Erros de regra: `{ error: string }` com 400/403/404/409/422/502 (502 = canal falhou ao enviar; nada é gravado).
+- CSAT: ao resolver, a pergunta é enviada pelo canal (falha não impede resolver) e `Conversation.csatRequestedAt` marca a espera. `onInboundMessage(conversationId, messageId?)` em `services/desk/hooks.ts` deve ser chamado pelo ingest após gravar mensagem INBOUND: incrementa unreadCount, trata CSAT (dígito 1-5 com espera pendente), reabre RESOLVED, chama `autoAssign` e emite `conversation.updated`.
+- A fila de uma conversa só é definida manualmente (assign com `queueId`); `autoAssign` exige conversa com fila.

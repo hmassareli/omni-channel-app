@@ -1,8 +1,8 @@
 import { IdentityType, MessageDirection, Prisma } from "@prisma/client";
 import { z } from "zod";
-import { prisma } from "../prisma";
+import { prisma } from "../../prisma";
 import * as waha from "./waha";
-import { backfillConversationTimelineEvents } from "./message-timeline";
+import { backfillConversationTimelineEvents } from "../../services/conversations/timeline";
 
 const syncMessageSchema = z
   .object({

@@ -334,42 +334,98 @@ export interface GetContactTimelineResponse {
 // Conversations
 // ============================================================================
 
-export type ConversationListItem = Prisma.ConversationGetPayload<{
-  include: {
-    contact: {
-      select: {
-        id: true;
-        name: true;
-        identities: { select: { type: true; value: true } };
-      };
-    };
-    channel: { select: { id: true; name: true; type: true } };
-    _count: { select: { messages: true } };
+/** Item da lista da mesa (GET /conversations). */
+export interface ConversationListItem {
+  id: string;
+  status: Prisma.ConversationGetPayload<{}>["status"];
+  lastMessageAt: string;
+  contact: {
+    id: string;
+    name: string | null;
+    avatarUrl: string | null;
+    company: { id: string; name: string } | null;
   };
-}>;
+  channel: {
+    id: string;
+    name: string;
+    type: Prisma.ChannelGetPayload<{}>["type"];
+  };
+  assignedAgent: { id: string; name: string; avatarUrl: string | null } | null;
+  queue: { id: string; name: string } | null;
+  lastMessage: {
+    content: string | null;
+    direction: Prisma.MessageGetPayload<{}>["direction"];
+    sentAt: string;
+  } | null;
+  unreadCount: number;
+}
 
-export type ConversationDetail = Prisma.ConversationGetPayload<{
-  include: {
-    contact: {
-      include: {
-        identities: true;
-        company: { select: { id: true; name: true; alias: true } };
-        tags: {
-          include: { tag: { select: { id: true; name: true; color: true } } };
-        };
-      };
-    };
-    channel: { select: { id: true; name: true; type: true; status: true } };
-  };
-}>;
+/** Detalhe (GET /conversations/:id): item da lista + campos extras. */
+export interface ConversationDetail extends ConversationListItem {
+  summary: string | null;
+  firstResponseAt: string | null;
+  resolvedAt: string | null;
+  csat: { score: number; comment: string | null } | null;
+}
 
 export interface GetConversationsResponse {
   conversations: ConversationListItem[];
-  pagination: Pagination;
+  nextCursor: string | null;
 }
 
 export interface GetConversationResponse {
   conversation: ConversationDetail;
+}
+
+export interface SendMessageResponse {
+  message: Prisma.MessageGetPayload<{}>;
+}
+
+export interface ConversationActionResponse {
+  conversation: ConversationDetail;
+}
+
+export interface CreateNoteResponse {
+  event: Prisma.TimelineEventGetPayload<{}>;
+}
+
+// ============================================================================
+// Filas
+// ============================================================================
+
+export interface DeskQueue {
+  id: string;
+  name: string;
+  members: Array<{ id: string; name: string; avatarUrl: string | null }>;
+}
+
+export interface GetQueuesResponse {
+  queues: DeskQueue[];
+}
+
+export interface QueueResponse {
+  queue: DeskQueue;
+}
+
+// ============================================================================
+// Métricas da mesa
+// ============================================================================
+
+export interface DeskMetricsResponse {
+  totals: { open: number; pending: number; resolved: number; unassigned: number };
+  firstResponseAvgSeconds: number | null;
+  resolutionAvgSeconds: number | null;
+  csat: { avg: number | null; count: number };
+  byAgent: Array<{
+    agentId: string;
+    name: string;
+    handled: number;
+    resolved: number;
+    firstResponseAvgSeconds: number | null;
+    csatAvg: number | null;
+  }>;
+  byQueue: Array<{ queueId: string; name: string; open: number; pending: number }>;
+  volumeByDay: Array<{ date: string; inbound: number; outbound: number }>;
 }
 
 export interface GetMessagesResponse {

@@ -291,6 +291,7 @@ model Operation {
   stages             Stage[]
   users              User[]
   agents             Agent[]
+  queues             Queue[]
 
   @@map("omni_operations")
 }
@@ -336,6 +337,10 @@ model Agent {
   operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
   channels  Channel[]
   opportunities Opportunity[]
+
+  assignedConversations Conversation[] @relation("ConversationAssignee")
+  queueMemberships      QueueMember[]
+  sentMessages          Message[]      @relation("MessageSentByAgent")
 
   @@map("omni_agents")
 }
@@ -408,18 +413,80 @@ model Conversation {
   timeToFirstInteraction Int?
   lastAnalysisAt         DateTime?
   needsAnalysis          Boolean   @default(true)
+
+  // Mesa de atendimento
+  status          ConversationStatus @default(OPEN)
+  assignedAgentId String?
+  queueId         String?
+  resolvedAt      DateTime?
+  unreadCount     Int                @default(0)
+  csatRequestedAt DateTime? // quando a pergunta de CSAT foi enviada (aguardando nota)
+
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  contact       Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel       Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  assignedAgent Agent?        @relation("ConversationAssignee", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  queue         Queue?        @relation(fields: [queueId], references: [id], onDelete: SetNull)
+  csat          CsatResponse?
 
   messages Message[]
   events   TimelineEvent[]
 
   @@index([contactId, channelId])
   @@index([needsAnalysis])
+  @@index([channelId, status, lastMessageAt])
+  @@index([assignedAgentId, status])
+  @@index([queueId, status])
   @@map("omni_conversations")
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+}
+
+// Filas de atendimento (distribuição automática entre membros)
+model Queue {
+  id          String   @id @default(uuid())
+  operationId String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  operation     Operation      @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  members       QueueMember[]
+  conversations Conversation[]
+
+  @@unique([operationId, name])
+  @@map("omni_queues")
+}
+
+model QueueMember {
+  queueId String
+  agentId String
+
+  queue Queue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@id([queueId, agentId])
+  @@index([agentId])
+  @@map("omni_queue_members")
+}
+
+// Avaliação de satisfação (nota de 1 a 5) por conversa
+model CsatResponse {
+  id             String   @id @default(uuid())
+  conversationId String   @unique
+  score          Int // 1-5
+  comment        String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("omni_csat_responses")
 }
 
 enum MessageDirection {
@@ -441,11 +508,13 @@ model Message {
   processedAt        DateTime?
   requiresProcessing Boolean          @default(true)
   metadata           Json?
+  sentByAgentId      String? // atendente que enviou (OUTBOUND pelo app)
   createdAt          DateTime         @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
   identity     Identity?    @relation(fields: [identityId], references: [id], onDelete: SetNull)
+  sentByAgent  Agent?       @relation("MessageSentByAgent", fields: [sentByAgentId], references: [id], onDelete: SetNull)
 
   @@unique([conversationId, externalId])
   @@index([conversationId, sentAt])

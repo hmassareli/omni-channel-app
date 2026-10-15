@@ -212,10 +212,10 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   // Loading enquanto verifica se existe operação
   if (isCheckingOperation) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Carregando...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-600 mx-auto"></div>
+          <p className="mt-4 text-slate-600">Carregando...</p>
         </div>
       </div>
     );
@@ -273,7 +273,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       <div className="max-w-3xl mx-auto px-4 py-12">
         <ProgressBar
           currentStep={state.currentStep}

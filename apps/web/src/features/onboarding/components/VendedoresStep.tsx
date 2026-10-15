@@ -241,10 +241,10 @@ export function VendedoresStep({
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">
           Conecte o WhatsApp dos seus vendedores
         </h1>
-        <p className="text-gray-600">
+        <p className="text-slate-600">
           Para começar, conecte as contas de WhatsApp que serão usadas para atendimento. 
           Peça para cada vendedor escanear o código com o celular.
         </p>
@@ -266,14 +266,14 @@ export function VendedoresStep({
 
       {/* Form para adicionar vendedor */}
       {showAddForm ? (
-        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 mb-6">
+        <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 mb-6">
           <div className="flex gap-3">
             <input
               type="text"
               value={newVendedorName}
               onChange={(e) => setNewVendedorName(e.target.value)}
               placeholder="Nome do vendedor"
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-accent-500 outline-none"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAddVendedor();
@@ -286,7 +286,7 @@ export function VendedoresStep({
             <button
               onClick={handleAddVendedor}
               disabled={!newVendedorName.trim()}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 bg-accent-500 text-white rounded-lg hover:bg-accent-600 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
             >
               Adicionar
             </button>
@@ -295,7 +295,7 @@ export function VendedoresStep({
                 setShowAddForm(false);
                 setNewVendedorName('');
               }}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
             >
               Cancelar
             </button>
@@ -304,7 +304,7 @@ export function VendedoresStep({
       ) : (
         <button
           onClick={() => setShowAddForm(true)}
-          className="w-full border-2 border-dashed border-blue-300 rounded-xl p-4 text-blue-600 hover:bg-blue-50 hover:border-blue-400 transition-colors flex items-center justify-center gap-2 mb-6"
+          className="w-full border-2 border-dashed border-accent-300 rounded-xl p-4 text-accent-600 hover:bg-accent-50 hover:border-accent-400 transition-colors flex items-center justify-center gap-2 mb-6"
         >
           <Plus className="w-5 h-5" />
           Adicionar Vendedor
@@ -316,7 +316,7 @@ export function VendedoresStep({
         {onBack && (
           <button
             onClick={onBack}
-            className="px-6 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            className="px-6 py-2 text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
           >
             Voltar
           </button>
@@ -324,14 +324,14 @@ export function VendedoresStep({
         <button
           onClick={onNext}
           disabled={!hasConnectedVendedor}
-          className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          className="px-6 py-2 bg-accent-500 text-white rounded-lg hover:bg-accent-600 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
         >
           Continuar
         </button>
       </div>
 
       {!hasConnectedVendedor && vendedores.length > 0 && (
-        <p className="text-center text-sm text-amber-600 mt-4">
+        <p className="text-center text-sm text-warning-600 mt-4">
           Conecte pelo menos um vendedor para continuar
         </p>
       )}
@@ -359,44 +359,44 @@ function VendedorCard({
   const statusConfig = {
     pending: {
       label: 'Aguardando Conexão',
-      color: 'text-amber-600',
-      dot: 'bg-amber-500',
+      color: 'text-warning-600',
+      dot: 'bg-warning-600',
     },
     connecting: {
       label: 'Conectando...',
-      color: 'text-blue-600',
-      dot: 'bg-blue-500',
+      color: 'text-accent-600',
+      dot: 'bg-accent-500',
     },
     connected: {
       label: 'Conectado',
-      color: 'text-green-600',
-      dot: 'bg-green-500',
+      color: 'text-success-600',
+      dot: 'bg-success-600',
     },
     error: {
       label: 'Erro na conexão',
-      color: 'text-red-600',
-      dot: 'bg-red-500',
+      color: 'text-danger-600',
+      dot: 'bg-danger-600',
     },
   };
 
   const status = statusConfig[vendedor.status];
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-4 flex-1">
           <div className="flex flex-col">
-            <h3 className="font-semibold text-gray-900">
+            <h3 className="font-semibold text-slate-900">
               Vendedor {index}
             </h3>
-            <p className="text-sm text-gray-500">{vendedor.name}</p>
+            <p className="text-sm text-slate-500">{vendedor.name}</p>
             <div className={`flex items-center gap-1.5 text-sm ${status.color} mt-1`}>
               <span className={`w-2 h-2 rounded-full ${status.dot}`} />
               {status.label}
             </div>
             
             {vendedor.status === 'connected' && vendedor.phone && (
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-slate-600 mt-1">
                 +{vendedor.phone}
               </p>
             )}
@@ -405,7 +405,7 @@ function VendedorCard({
 
         {/* QR Code ou Avatar */}
         {vendedor.qrCode && vendedor.status === 'pending' ? (
-          <div className="w-32 h-32 bg-white border border-gray-200 rounded-lg overflow-hidden flex-shrink-0">
+          <div className="w-32 h-32 bg-white border border-slate-200 rounded-lg overflow-hidden flex-shrink-0">
             <img 
               src={vendedor.qrCode} 
               alt="QR Code WhatsApp"
@@ -413,7 +413,7 @@ function VendedorCard({
             />
           </div>
         ) : (
-          <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center flex-shrink-0">
+          <div className="w-12 h-12 bg-gradient-to-br from-accent-400 to-pink-400 rounded-full flex items-center justify-center flex-shrink-0">
             {vendedor.avatarUrl ? (
               <img 
                 src={vendedor.avatarUrl} 
@@ -432,7 +432,7 @@ function VendedorCard({
         {vendedor.status === 'pending' && !vendedor.qrCode && (
           <button
             onClick={onGenerateQR}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-accent-500 text-white text-sm font-medium rounded-lg hover:bg-accent-600 transition-colors"
           >
             <QrCode className="w-4 h-4" />
             Gerar QR Code
@@ -440,13 +440,13 @@ function VendedorCard({
         )}
 
         {vendedor.status === 'pending' && vendedor.qrCode && (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-slate-500">
             Escaneie o QR Code com o WhatsApp do vendedor
           </p>
         )}
 
         {vendedor.status === 'connecting' && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg">
+          <div className="flex items-center gap-2 px-4 py-2 bg-accent-100 text-accent-700 text-sm font-medium rounded-lg">
             <Loader2 className="w-4 h-4 animate-spin" />
             Gerando QR Code...
           </div>
@@ -456,13 +456,13 @@ function VendedorCard({
           <>
             <button
               onClick={onRemove}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors"
             >
               Remover
             </button>
             <button
               onClick={onReconnect}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-accent-500 text-white text-sm font-medium rounded-lg hover:bg-accent-600 transition-colors"
             >
               Reconectar
             </button>
@@ -472,7 +472,7 @@ function VendedorCard({
         {vendedor.status === 'error' && (
           <button
             onClick={onReconnect}
-            className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 text-sm font-medium rounded-lg hover:bg-red-200 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-danger-100 text-danger-700 text-sm font-medium rounded-lg hover:bg-danger-100 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
             Tentar Novamente

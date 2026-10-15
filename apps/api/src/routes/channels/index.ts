@@ -3,12 +3,12 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
 import { prisma } from "../../prisma";
-import * as waha from "../../services/waha";
+import * as waha from "../../channels/whatsapp-waha/waha";
 import {
   ensureWhatsappSessionWebhook,
   resolveWhatsappWebhookUrl,
-} from "../../services/whatsapp-webhook";
-import { syncWhatsAppChats } from "../../services/whatsapp-sync";
+} from "../../channels/whatsapp-waha/webhook-config";
+import { syncWhatsAppChats } from "../../channels/whatsapp-waha/sync";
 
 // ============================================================================
 // Schemas de validação

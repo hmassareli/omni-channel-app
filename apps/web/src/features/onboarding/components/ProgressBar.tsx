@@ -10,14 +10,14 @@ export function ProgressBar({ currentStep, totalSteps }: ProgressBarProps) {
   return (
     <div className="mb-8">
       <div className="flex justify-between items-center mb-2">
-        <span className="text-sm text-gray-600">
+        <span className="text-sm text-slate-600">
           Passo {currentStep} de {totalSteps}
         </span>
-        <span className="text-sm text-gray-600">{percentage}%</span>
+        <span className="text-sm text-slate-600">{percentage}%</span>
       </div>
-      <div className="w-full bg-gray-200 rounded-full h-2">
+      <div className="w-full bg-slate-200 rounded-full h-2">
         <div
-          className="bg-blue-500 h-2 rounded-full transition-all duration-300 ease-out"
+          className="bg-accent-500 h-2 rounded-full transition-all duration-300 ease-out"
           style={{ width: `${progress}%` }}
         />
       </div>

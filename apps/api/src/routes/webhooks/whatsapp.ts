@@ -1,22 +1,13 @@
-import { ChannelStatus } from "@prisma/client";
+import { ChannelType } from "@prisma/client";
 import { FastifyInstance } from "fastify";
-import { z } from "zod";
-import { webhookAuthMiddleware } from "../../middleware/webhook-auth";
-import { prisma } from "../../prisma";
+import { getChannelAdapter } from "../../channels/registry";
 import {
-  ingestWhatsappMessage,
-  whatsappWebhookSchema,
-  type IngestResult,
-} from "../../services/whatsapp-ingest";
-import { syncWhatsAppChats } from "../../services/whatsapp-sync";
-import { ensureWhatsappSessionWebhook } from "../../services/whatsapp-webhook";
-
-const webhookResponseSchema = z.object({
-  conversationId: z.string().optional(),
-  messageId: z.string().optional(),
-  skipped: z.boolean().optional(),
-  reason: z.string().optional(),
-});
+  handleIgnoredWhatsappEvent,
+  handleWhatsappMessage,
+  handleWhatsappStatus,
+} from "../../channels/whatsapp-waha/inbound";
+import { InvalidWebhookPayloadError } from "../../channels/whatsapp-waha/parse";
+import { webhookAuthMiddleware } from "../../middleware/webhook-auth";
 
 const webhookDebugEnabled =
   process.env.WHATSAPP_WEBHOOK_DEBUG?.toLowerCase() === "true";
@@ -31,201 +22,70 @@ function logWebhookRouteDebug(stage: string, details: Record<string, unknown>) {
   );
 }
 
-// Schema para webhook de session.status do WAHA
-const sessionStatusWebhookSchema = z.object({
-  event: z.literal("session.status"),
-  session: z.string(),
-  me: z
-    .object({
-      id: z.string().optional(),
-      pushName: z.string().optional(),
-    })
-    .optional(),
-  payload: z.object({
-    status: z.enum([
-      "STOPPED",
-      "STARTING",
-      "SCAN_QR_CODE",
-      "WORKING",
-      "FAILED",
-    ]),
-  }),
-});
-
 export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
   /**
    * POST /webhooks/whatsapp
-   * Webhook principal - recebe mensagens e eventos do WAHA
+   * Webhook principal - recebe mensagens e eventos do WAHA.
+   * O adaptador normaliza o payload; o núcleo de conversas persiste.
    */
   app.post(
     "/whatsapp",
     { preHandler: webhookAuthMiddleware },
     async (request, reply) => {
-    const body = request.body as Record<string, unknown>;
+      const body = request.body as Record<string, unknown>;
 
-    logWebhookRouteDebug("received", {
-      body,
-      bodyKeys: Object.keys(body ?? {}),
-      event: typeof body.event === "string" ? body.event : null,
-      hasPayload: Object.prototype.hasOwnProperty.call(body ?? {}, "payload"),
-      hasBodyWrapper: Object.prototype.hasOwnProperty.call(body ?? {}, "body"),
-    });
-
-    // Verifica se é um evento de session.status
-    if (body.event === "session.status") {
-      const result = sessionStatusWebhookSchema.safeParse(body);
-
-      logWebhookRouteDebug("session-status-parse", {
-        success: result.success,
-        session: typeof body.session === "string" ? body.session : null,
-        status:
-          typeof body.payload === "object" &&
-          body.payload !== null &&
-          "status" in body.payload
-            ? ((body.payload as { status?: unknown }).status ?? null)
-            : null,
+      logWebhookRouteDebug("received", {
+        body,
+        bodyKeys: Object.keys(body ?? {}),
+        event: typeof body?.event === "string" ? body.event : null,
       });
 
-      if (!result.success) {
-        app.log.warn(
-          { body, error: result.error },
-          "Invalid session.status payload",
-        );
-        logWebhookRouteDebug("session-status-invalid", {
-          error: result.error.flatten(),
-          body,
-        });
-        return reply
-          .status(400)
-          .send({ error: "Invalid session.status payload" });
+      const adapter = getChannelAdapter(ChannelType.WHATSAPP);
+
+      let events;
+      try {
+        events = adapter.parseWebhook(body);
+      } catch (error) {
+        if (error instanceof InvalidWebhookPayloadError) {
+          app.log.warn({ body, error: error.details }, error.message);
+          return reply.status(400).send({ error: error.message });
+        }
+        throw error;
       }
 
-      logWebhookRouteDebug("session-status-valid", {
-        session: result.data.session,
-        status: result.data.payload.status,
-        me: result.data.me ?? null,
-      });
+      const event = events[0];
 
-      await handleSessionStatusWebhook(result.data);
-      return reply
-        .status(202)
-        .send({ processed: true, event: "session.status" });
-    }
+      if (!event) {
+        return reply.status(202).send({ skipped: true, reason: "no-events" });
+      }
 
-    // Evento de mensagem
-    const parseResult = whatsappWebhookSchema.safeParse(body);
+      if (event.kind === "status") {
+        await handleWhatsappStatus(event);
+        return reply
+          .status(202)
+          .send({ processed: true, event: "session.status" });
+      }
 
-    logWebhookRouteDebug("message-parse", {
-      success: parseResult.success,
-      body,
-    });
+      if (event.kind === "ignored") {
+        const skipped = await handleIgnoredWhatsappEvent(event, body);
+        return reply.status(202).send(skipped);
+      }
 
-    if (!parseResult.success) {
-      app.log.warn(
-        { body, error: parseResult.error },
-        "Invalid message payload",
-      );
-      logWebhookRouteDebug("message-invalid", {
-        error: parseResult.error.flatten(),
-        body,
-      });
-      return reply.status(400).send({ error: "Invalid payload" });
-    }
+      const result = await handleWhatsappMessage(event, body);
 
-    const result = await ingestWhatsappMessage(parseResult.data);
+      logWebhookRouteDebug("message-result", { result });
 
-    logWebhookRouteDebug("message-result", {
-      result,
-    });
+      if ("reason" in result) {
+        return reply.status(202).send({
+          skipped: true,
+          reason: result.reason,
+        });
+      }
 
-    if ("skipped" in result && result.skipped) {
       return reply.status(202).send({
-        skipped: true,
-        reason: result.reason,
+        conversationId: result.conversationId,
+        messageId: result.messageId,
       });
-    }
-
-    const successResult = result as Exclude<IngestResult, { skipped: true }>;
-    return reply.status(202).send({
-      conversationId: successResult.conversationId,
-      messageId: successResult.messageId,
-    });
     },
   );
-}
-
-// ============================================================================
-// Session Status Handler
-// ============================================================================
-
-async function handleSessionStatusWebhook(
-  data: z.infer<typeof sessionStatusWebhookSchema>,
-): Promise<void> {
-  const { session, payload, me } = data;
-
-  // Encontra o canal pelo nome da sessão
-  const whatsappChannel = await prisma.whatsAppChannel.findUnique({
-    where: { sessionName: session },
-    include: { channel: true },
-  });
-
-  if (!whatsappChannel) {
-    console.log(`[Webhook] Sessão ${session} não encontrada no banco`);
-    return;
-  }
-
-  // Mapeia status do WAHA para ChannelStatus
-  const newStatus = mapWahaStatusToChannelStatus(payload.status);
-
-  // Atualiza o canal
-  await prisma.channel.update({
-    where: { id: whatsappChannel.channelId },
-    data: {
-      status: newStatus,
-      // Salva o número quando conectar
-      externalIdentifier:
-        me?.id?.split("@")[0] || whatsappChannel.channel.externalIdentifier,
-    },
-  });
-
-  console.log(
-    `[Webhook] Canal ${whatsappChannel.channel.name} atualizado: ${payload.status} -> ${newStatus}`,
-  );
-
-  // Se acabou de conectar (WORKING), dispara sync dos chats
-  if (payload.status === "WORKING") {
-    console.log(
-      `[Webhook] Sessão ${session} conectada - iniciando sync de chats...`,
-    );
-
-    await ensureWhatsappSessionWebhook(session, whatsappChannel.webhookUrl);
-
-    // Executa sync em background para não bloquear o webhook
-    syncWhatsAppChats(whatsappChannel.channelId, session)
-      .then((result) => {
-        console.log(
-          `[Webhook] Sync concluído: ${result.totalChats} chats, ${result.newConversations} novos`,
-        );
-      })
-      .catch((error) => {
-        console.error(`[Webhook] Erro no sync:`, error);
-      });
-  }
-}
-
-function mapWahaStatusToChannelStatus(
-  wahaStatus: "STOPPED" | "STARTING" | "SCAN_QR_CODE" | "WORKING" | "FAILED",
-): ChannelStatus {
-  switch (wahaStatus) {
-    case "WORKING":
-      return ChannelStatus.WORKING;
-    case "STARTING":
-    case "SCAN_QR_CODE":
-      return ChannelStatus.CONNECTING;
-    case "STOPPED":
-      return ChannelStatus.STOPPED;
-    case "FAILED":
-    default:
-      return ChannelStatus.FAILED;
-  }
 }

@@ -39,6 +39,7 @@
     "fastify-type-provider-zod": "^6.1.0",
     "jose": "^6.2.12",
     "pg": "^8.13.1",
+    "pg-boss": "^10.4.2",
     "prisma": "^7.0.1",
     "undici": "^6.19.8",
     "zod": "^4.1.13"

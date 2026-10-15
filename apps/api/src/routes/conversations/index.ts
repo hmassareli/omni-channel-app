@@ -1,8 +1,19 @@
-import { Prisma } from "@prisma/client";
+import { ConversationStatus, Prisma } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
 import { prisma } from "../../prisma";
+import {
+  addNote,
+  assignConversation,
+  changeStatus,
+  getConversationDetail,
+  getVisibleConversation,
+  listConversations,
+  markRead,
+  sendAgentMessage,
+} from "../../services/desk";
+import { deskHandler } from "../desk-handler";
 
 // ============================================================================
 // Schemas
@@ -13,21 +24,33 @@ const conversationParamsSchema = z.object({
 });
 
 const conversationQuerySchema = z.object({
+  status: z.enum(ConversationStatus).optional(),
+  queueId: z.uuid().optional(),
+  /** "me" | "unassigned" | id do agente */
+  assignee: z.union([z.enum(["me", "unassigned"]), z.uuid()]).optional(),
+  search: z.string().optional(),
+  cursor: z.string().optional(),
   channelId: z.uuid().optional(),
   contactId: z.uuid().optional(),
-  operationId: z.string().optional(),
-  needsAnalysis: z
-    .enum(["true", "false"])
-    .transform((v) => v === "true")
-    .optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
 });
+
+const sendMessageSchema = z.object({ text: z.string().trim().min(1, "Texto é obrigatório").max(4096) });
+const noteSchema = z.object({ text: z.string().trim().min(1, "Texto é obrigatório").max(10000) });
+const assignSchema = z
+  .object({
+    agentId: z.uuid().nullable().optional(),
+    queueId: z.uuid().nullable().optional(),
+  })
+  .refine((v) => v.agentId !== undefined || v.queueId !== undefined, {
+    message: "Informe agentId e/ou queueId",
+  });
+const statusSchema = z.object({ status: z.enum(ConversationStatus) });
 
 const messagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
-  before: z.date().optional(),
-  after: z.date().optional(),
+  before: z.coerce.date().optional(),
+  after: z.coerce.date().optional(),
 });
 
 // ============================================================================
@@ -37,99 +60,28 @@ const messagesQuerySchema = z.object({
 export async function conversationsRoutes(app: FastifyInstance) {
   /**
    * GET /conversations
-   * Lista conversas com filtros e paginação
+   * Lista a mesa (cursor + filtros). AGENT vê só as suas e as não atribuídas.
    */
-  app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const query = conversationQuerySchema.parse(request.query);
-
-    if (!user.operationId) {
-      return reply.send({ conversations: [], total: 0 });
-    }
-
-    const where: Prisma.ConversationWhereInput = {
-      // Filtra por operation via channel
-      channel: { operationId: user.operationId },
-    };
-
-    if (query.channelId) {
-      where.channelId = query.channelId;
-    }
-
-    if (query.contactId) {
-      where.contactId = query.contactId;
-    }
-
-    if (query.needsAnalysis !== undefined) {
-      where.needsAnalysis = query.needsAnalysis;
-    }
-
-    const [conversations, total] = await Promise.all([
-      prisma.conversation.findMany({
-        where,
-        include: {
-          contact: {
-            select: {
-              id: true,
-              name: true,
-              identities: { select: { type: true, value: true }, take: 1 },
-            },
-          },
-          channel: { select: { id: true, name: true, type: true } },
-          _count: { select: { messages: true } },
-        },
-        orderBy: { lastMessageAt: "desc" },
-        take: query.limit,
-        skip: query.offset,
-      }),
-      prisma.conversation.count({ where }),
-    ]);
-
-    return reply.send({
-      conversations,
-      pagination: {
-        total,
-        limit: query.limit,
-        offset: query.offset,
-        hasMore: query.offset + conversations.length < total,
-      },
-    });
-  });
+  app.get(
+    "/",
+    { preHandler: authMiddleware },
+    deskHandler(async (actor, request) => {
+      const query = conversationQuerySchema.parse(request.query);
+      return listConversations(actor, query);
+    }),
+  );
 
   /**
    * GET /conversations/:id
-   * Busca uma conversa por ID com detalhes
    */
-  app.get("/:id", { preHandler: authMiddleware }, async (request, reply) => {
-    const user = request.user!;
-    const { id } = conversationParamsSchema.parse(request.params);
-
-    const conversation = await prisma.conversation.findFirst({
-      where: { id, channel: { operationId: user.operationId } },
-      include: {
-        contact: {
-          include: {
-            identities: true,
-            company: { select: { id: true, name: true, alias: true } },
-            tags: {
-              include: {
-                tag: { select: { id: true, name: true, color: true } },
-              },
-            },
-          },
-        },
-        channel: {
-          select: { id: true, name: true, type: true, status: true },
-        },
-      },
-    });
-
-    if (!conversation) {
-      return reply.status(404).send({ error: "Conversa não encontrada" });
-    }
-
-    return reply.send({ conversation });
-  });
+  app.get(
+    "/:id",
+    { preHandler: authMiddleware },
+    deskHandler(async (actor, request) => {
+      const { id } = conversationParamsSchema.parse(request.params);
+      return { conversation: await getConversationDetail(actor, id) };
+    }),
+  );
 
   /**
    * GET /conversations/:id/messages
@@ -138,17 +90,10 @@ export async function conversationsRoutes(app: FastifyInstance) {
   app.get(
     "/:id/messages",
     { preHandler: authMiddleware },
-    async (request, reply) => {
-      const user = request.user!;
+    deskHandler(async (actor, request, reply) => {
       const { id } = conversationParamsSchema.parse(request.params);
       const query = messagesQuerySchema.parse(request.query);
-
-      const conversation = await prisma.conversation.findFirst({
-        where: { id, channel: { operationId: user.operationId } },
-      });
-      if (!conversation) {
-        return reply.status(404).send({ error: "Conversa não encontrada" });
-      }
+      await getVisibleConversation(actor, id);
 
       const where: Prisma.MessageWhereInput = {
         conversationId: id,
@@ -179,7 +124,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
         messages: messages.reverse(),
         hasMore: messages.length === query.limit,
       });
-    },
+    }),
   );
 
   /**
@@ -208,5 +153,62 @@ export async function conversationsRoutes(app: FastifyInstance) {
 
       return reply.send({ success: true, message: "Análise agendada" });
     },
+  );
+
+  /** POST /conversations/:id/messages - envia pelo canal */
+  app.post(
+    "/:id/messages",
+    { preHandler: authMiddleware },
+    deskHandler(async (actor, request, reply) => {
+      const { id } = conversationParamsSchema.parse(request.params);
+      const { text } = sendMessageSchema.parse(request.body);
+      const message = await sendAgentMessage(actor, id, text);
+      return reply.status(201).send({ message });
+    }),
+  );
+
+  /** POST /conversations/:id/assign */
+  app.post(
+    "/:id/assign",
+    { preHandler: authMiddleware },
+    deskHandler(async (actor, request) => {
+      const { id } = conversationParamsSchema.parse(request.params);
+      const body = assignSchema.parse(request.body);
+      return { conversation: await assignConversation(actor, id, body) };
+    }),
+  );
+
+  /** POST /conversations/:id/status */
+  app.post(
+    "/:id/status",
+    { preHandler: authMiddleware },
+    deskHandler(async (actor, request) => {
+      const { id } = conversationParamsSchema.parse(request.params);
+      const { status } = statusSchema.parse(request.body);
+      return { conversation: await changeStatus(actor, id, status) };
+    }),
+  );
+
+  /** POST /conversations/:id/notes - nota interna */
+  app.post(
+    "/:id/notes",
+    { preHandler: authMiddleware },
+    deskHandler(async (actor, request, reply) => {
+      const { id } = conversationParamsSchema.parse(request.params);
+      const { text } = noteSchema.parse(request.body);
+      const event = await addNote(actor, id, text);
+      return reply.status(201).send({ event });
+    }),
+  );
+
+  /** POST /conversations/:id/read - zera unreadCount */
+  app.post(
+    "/:id/read",
+    { preHandler: authMiddleware },
+    deskHandler(async (actor, request, reply) => {
+      const { id } = conversationParamsSchema.parse(request.params);
+      await markRead(actor, id);
+      return reply.status(204).send();
+    }),
   );
 }

@@ -1,47 +1,46 @@
 import { EventType, MessageDirection, Prisma, TagSource } from "@prisma/client";
+import { enqueue, QUEUES } from "../jobs/boss";
 import { prisma } from "../prisma";
 
-const pendingConversations = new Set();
-const runningConversations = new Set();
-const analysisConcurrency = Math.max(1, Number(process.env.CONVERSATION_ANALYSIS_CONCURRENCY ?? 1));
+// ============================================================================
+// Análise de conversa por IA (resumo, tags, insights e estágio).
+// Execução durável via pg-boss (fila "analyze-conversation").
+// ============================================================================
 
-export function scheduleConversationAnalysis(conversationId) {
-  if (runningConversations.has(conversationId)) {
-    return;
-  }
+type AnalysisTag = { slug: string; label: string; description?: string; promptCondition?: string };
+type AnalysisInsight = { slug: string; name: string; description?: string; promptInstruction?: string; schema?: unknown };
+type AnalysisStage = { slug: string; name: string; promptCondition?: string; autoTransition: boolean };
 
-  pendingConversations.add(conversationId);
-  queueMicrotask(drainAnalysisQueue);
+interface AnalysisInput {
+  conversationSnippet: string;
+  conversationSummary?: string;
+  tags: AnalysisTag[];
+  insights: AnalysisInsight[];
+  stages: AnalysisStage[];
+  currentStageSlug?: string;
+  currentTags: string[];
 }
 
-async function drainAnalysisQueue() {
-  if (runningConversations.size >= analysisConcurrency) {
-    return;
-  }
-
-  const iterator = pendingConversations.values().next();
-  if (iterator.done) {
-    return;
-  }
-
-  const conversationId = iterator.value;
-  pendingConversations.delete(conversationId);
-  runningConversations.add(conversationId);
-
-  try {
-    await processConversation(conversationId);
-  } catch (error) {
-    console.error("conversation-analysis: failed", conversationId, error);
-  } finally {
-    runningConversations.delete(conversationId);
-
-    if (pendingConversations.size > 0) {
-      queueMicrotask(drainAnalysisQueue);
-    }
-  }
+interface AnalysisResult {
+  summary: string;
+  tags: string[];
+  insights: Record<string, unknown>;
+  stage: { slug?: string; confidence?: number | string } | null;
 }
 
-async function processConversation(conversationId) {
+/** Enfileira a análise (no máximo uma pendente por conversa). Nunca lança. */
+export function scheduleConversationAnalysis(conversationId: string): void {
+  enqueue(
+    QUEUES.analyzeConversation,
+    { conversationId },
+    { singletonKey: conversationId },
+  ).catch((error) => {
+    console.error("conversation-analysis: falha ao enfileirar", conversationId, error);
+  });
+}
+
+/** Handler do job: analisa a conversa. Erros sobem para o retry do pg-boss. */
+export async function analyzeConversation(conversationId: string): Promise<void> {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: {
@@ -266,13 +265,15 @@ async function processConversation(conversationId) {
   });
 }
 
-function formatConversation(messages) {
+function formatConversation(
+  messages: Array<{ direction: MessageDirection; content: string | null; hasMedia: boolean }>,
+): string {
   if (!messages.length) {
     return "";
   }
 
-  const conversationArray = [];
-  let currentSpeaker = null;
+  const conversationArray: string[] = [];
+  let currentSpeaker: MessageDirection | null = null;
 
   for (const message of messages) {
     const speaker = message.direction === MessageDirection.OUTBOUND ? "[ATENDENTE]" : "[CLIENTE]";
@@ -288,7 +289,7 @@ function formatConversation(messages) {
     conversationArray.push(finalContent.slice(0, 400));
   }
 
-  const truncated = [];
+  const truncated: string[] = [];
   let totalChars = 0;
 
   for (let index = conversationArray.length - 1; index >= 0; index -= 1) {
@@ -306,7 +307,7 @@ function formatConversation(messages) {
   return truncated.join("\n");
 }
 
-async function runGroqAnalysis(input) {
+async function runGroqAnalysis(input: AnalysisInput): Promise<AnalysisResult | null> {
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
@@ -358,7 +359,7 @@ async function runGroqAnalysis(input) {
     const parsed = JSON.parse(content);
     return {
       summary: typeof parsed.summary === "string" ? parsed.summary.trim() : "",
-      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((v) => typeof v === "string") : [],
+      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((v: unknown): v is string => typeof v === "string") : [],
       insights: parsed.insights && typeof parsed.insights === "object" ? parsed.insights : {},
       stage: parsed.stage ?? null,
     };
@@ -368,7 +369,7 @@ async function runGroqAnalysis(input) {
   }
 }
 
-function buildUnifiedPrompt(input) {
+function buildUnifiedPrompt(input: AnalysisInput): string {
   const tagsJson = JSON.stringify(input.tags);
   const insightsJson = JSON.stringify(input.insights);
   const stagesJson = JSON.stringify(input.stages);
@@ -419,7 +420,7 @@ function resolveTagSelections(tagSlugs: string[], tags: Array<{ slug: string; id
   }
 
   const tagMap = new Map(tags.map((tag) => [tag.slug, tag] as [string, typeof tags[0]]));
-  const selections = [];
+  const selections: Array<{ id: string; slug: string }> = [];
 
   for (const slug of tagSlugs) {
     const definition = tagMap.get(slug);
@@ -456,17 +457,21 @@ function resolveInsightSelections(rawInsights: Record<string, unknown>, definiti
   return selections;
 }
 
-function normalizeInsightPayload(value) {
+function normalizeInsightPayload(value: unknown): {
+  payload: unknown;
+  confidence?: number | null;
+  expiresAt?: Date | null;
+} {
   if (!value || typeof value !== "object") {
     return { payload: value };
   }
 
-  const record = value;
+  const record = value as Record<string, unknown>;
   const rawPayload = record.payload ?? value;
   const confidenceCandidate = record.confidence;
   const expiresCandidate = record.expiresAt;
 
-  let confidence;
+  let confidence: number | undefined;
   if (typeof confidenceCandidate === "number") {
     confidence = clamp(confidenceCandidate, 0, 1);
   } else if (typeof confidenceCandidate === "string") {
@@ -476,7 +481,7 @@ function normalizeInsightPayload(value) {
     }
   }
 
-  let expiresAt;
+  let expiresAt: Date | undefined;
   if (typeof expiresCandidate === "string") {
     const parsed = new Date(expiresCandidate);
     if (!Number.isNaN(parsed.getTime())) {
@@ -520,10 +525,10 @@ function resolveStageSuggestion(rawStage: { slug?: string; confidence?: number |
   return { definition, confidence };
 }
 
-function escapeJson(value) {
+function escapeJson(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }

@@ -4,7 +4,7 @@ import {
   MessageDirection,
   Prisma,
 } from "@prisma/client";
-import { prisma } from "../prisma";
+import { prisma } from "../../prisma";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "../../../hooks/useAuth";
 import { Mail, Lock, User, Loader2, AlertCircle } from "lucide-react";
 
 type AuthMode = "login" | "signup" | "forgot-password";
@@ -84,28 +84,28 @@ export function LoginPage() {
   const displayError = localError || error?.message;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-accent-50 via-white to-accent-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center bg-purple-600 p-4 rounded-2xl shadow-lg mb-4">
+          <div className="inline-flex items-center justify-center bg-accent-600 p-4 rounded-2xl shadow-lg mb-4">
             <span className="text-3xl font-bold text-white">CRM</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-800">Omni Channel</h1>
-          <p className="text-gray-500 mt-2">
+          <h1 className="text-2xl font-bold text-slate-800">Omni Channel</h1>
+          <p className="text-slate-500 mt-2">
             Gerencie todas as suas conversas em um só lugar
           </p>
         </div>
 
         {/* Card de Login */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-8">
           <div className="mb-6">
-            <h2 className="text-xl font-semibold text-gray-800">
+            <h2 className="text-xl font-semibold text-slate-800">
               {mode === "login" && "Bem-vindo de volta"}
               {mode === "signup" && "Criar nova conta"}
               {mode === "forgot-password" && "Recuperar senha"}
             </h2>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-slate-500 mt-1">
               {mode === "login" && "Faça login para continuar"}
               {mode === "signup" && "Preencha os dados para se cadastrar"}
               {mode === "forgot-password" &&
@@ -115,14 +115,14 @@ export function LoginPage() {
 
           {/* Mensagens de erro/sucesso */}
           {displayError && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">
+            <div className="mb-4 p-3 bg-danger-50 border border-danger-100 rounded-lg flex items-center gap-2 text-danger-700 text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               {displayError}
             </div>
           )}
 
           {successMessage && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+            <div className="mb-4 p-3 bg-success-50 border border-success-100 rounded-lg text-success-700 text-sm">
               {successMessage}
             </div>
           )}
@@ -133,19 +133,19 @@ export function LoginPage() {
               <div>
                 <label
                   htmlFor="fullName"
-                  className="block text-sm font-medium text-gray-700 mb-1"
+                  className="block text-sm font-medium text-slate-700 mb-1"
                 >
                   Nome completo
                 </label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                   <input
                     id="fullName"
                     type="text"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="João Silva"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all text-gray-800 placeholder-gray-400"
+                    className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-accent-500 outline-none transition-all text-slate-800 placeholder-slate-400"
                   />
                 </div>
               </div>
@@ -154,12 +154,12 @@ export function LoginPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700 mb-1"
+                className="block text-sm font-medium text-slate-700 mb-1"
               >
                 Email
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input
                   id="email"
                   type="email"
@@ -167,7 +167,7 @@ export function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="seu@email.com"
                   required
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all text-gray-800 placeholder-gray-400"
+                  className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-accent-500 outline-none transition-all text-slate-800 placeholder-slate-400"
                 />
               </div>
             </div>
@@ -176,12 +176,12 @@ export function LoginPage() {
               <div>
                 <label
                   htmlFor="password"
-                  className="block text-sm font-medium text-gray-700 mb-1"
+                  className="block text-sm font-medium text-slate-700 mb-1"
                 >
                   Senha
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                   <input
                     id="password"
                     type="password"
@@ -189,7 +189,7 @@ export function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all text-gray-800 placeholder-gray-400"
+                    className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-accent-500 focus:border-accent-500 outline-none transition-all text-slate-800 placeholder-slate-400"
                   />
                 </div>
               </div>
@@ -203,7 +203,7 @@ export function LoginPage() {
                     setMode("forgot-password");
                     setLocalError(null);
                   }}
-                  className="text-sm text-purple-600 hover:text-purple-700 font-medium"
+                  className="text-sm text-accent-600 hover:text-accent-700 font-medium"
                 >
                   Esqueceu a senha?
                 </button>
@@ -213,7 +213,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full bg-accent-600 text-white py-3 rounded-lg font-medium hover:bg-accent-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -235,10 +235,10 @@ export function LoginPage() {
             <>
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200"></div>
+                  <div className="w-full border-t border-slate-200"></div>
                 </div>
                 <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white text-gray-500">ou</span>
+                  <span className="px-2 bg-white text-slate-500">ou</span>
                 </div>
               </div>
 
@@ -247,7 +247,7 @@ export function LoginPage() {
                 type="button"
                 onClick={signInWithGoogle}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path
@@ -267,7 +267,7 @@ export function LoginPage() {
                     fill="#EA4335"
                   />
                 </svg>
-                <span className="text-gray-700 font-medium">
+                <span className="text-slate-700 font-medium">
                   Continuar com Google
                 </span>
               </button>
@@ -277,7 +277,7 @@ export function LoginPage() {
           {/* Toggle Mode */}
           <div className="mt-6 text-center text-sm">
             {mode === "login" && (
-              <p className="text-gray-600">
+              <p className="text-slate-600">
                 Não tem uma conta?{" "}
                 <button
                   type="button"
@@ -285,14 +285,14 @@ export function LoginPage() {
                     setMode("signup");
                     setLocalError(null);
                   }}
-                  className="text-purple-600 hover:text-purple-700 font-medium"
+                  className="text-accent-600 hover:text-accent-700 font-medium"
                 >
                   Criar conta
                 </button>
               </p>
             )}
             {mode === "signup" && (
-              <p className="text-gray-600">
+              <p className="text-slate-600">
                 Já tem uma conta?{" "}
                 <button
                   type="button"
@@ -300,14 +300,14 @@ export function LoginPage() {
                     setMode("login");
                     setLocalError(null);
                   }}
-                  className="text-purple-600 hover:text-purple-700 font-medium"
+                  className="text-accent-600 hover:text-accent-700 font-medium"
                 >
                   Fazer login
                 </button>
               </p>
             )}
             {mode === "forgot-password" && (
-              <p className="text-gray-600">
+              <p className="text-slate-600">
                 Lembrou da senha?{" "}
                 <button
                   type="button"
@@ -315,7 +315,7 @@ export function LoginPage() {
                     setMode("login");
                     setLocalError(null);
                   }}
-                  className="text-purple-600 hover:text-purple-700 font-medium"
+                  className="text-accent-600 hover:text-accent-700 font-medium"
                 >
                   Voltar ao login
                 </button>
@@ -325,7 +325,7 @@ export function LoginPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-xs text-gray-400 mt-6">
+        <p className="text-center text-xs text-slate-400 mt-6">
           © 2025 Omni Channel CRM. Todos os direitos reservados.
         </p>
       </div>

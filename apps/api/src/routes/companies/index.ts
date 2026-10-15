@@ -3,7 +3,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
 import { prisma } from "../../prisma";
-import { backfillContactTimelineEvents } from "../../services/message-timeline";
+import { backfillContactTimelineEvents } from "../../services/conversations/timeline";
 
 // ============================================================================
 // CNPJ Lookup Service (CNPJA API)
