@@ -12,6 +12,7 @@ import { config } from "./config";
 import { TokenVerifier, setTokenVerifier } from "./middleware/auth";
 import { eventsRoutes } from "./events/sse";
 import { stopJobs } from "./jobs/boss";
+import { reconfigureAllWhatsappWebhooks } from "./channels/whatsapp-waha/webhook-config";
 import { startJobs } from "./jobs/workers";
 import { prisma } from "./prisma";
 
@@ -117,7 +118,14 @@ export async function buildApp(options: BuildAppOptions = {}) {
 if (require.main === module) {
   buildApp().then((app) => {
     app.listen({ port: 3333, host: "0.0.0.0" }).then(async () => {
+      if (process.env.NODE_ENV === "production") {
+        if (!config.webhookSecret) console.warn("[Config] WEBHOOK_SECRET ausente: webhooks recusados (503)");
+        if (config.corsOrigins.length === 0) console.warn("[Config] CORS_ORIGINS ausente: navegadores serão bloqueados");
+      }
       await startJobs();
+      reconfigureAllWhatsappWebhooks().catch((error) =>
+        console.error("[Webhook] Reconfiguração no boot falhou:", error),
+      );
       console.log("HTTP server running on http://localhost:3333");
     });
   });

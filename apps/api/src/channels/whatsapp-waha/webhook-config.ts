@@ -1,3 +1,4 @@
+import { prisma } from "../../prisma";
 import * as waha from "./waha";
 
 function normalizeBaseUrl(url: string): string {
@@ -33,4 +34,29 @@ export async function ensureWhatsappSessionWebhook(
   ]);
 
   return resolvedWebhookUrl;
+}
+
+/**
+ * Reaplica a configuração de webhook (URL + segredo) em todas as sessões WAHA.
+ * Chamado no boot para que mudanças de WEBHOOK_SECRET/APP_PUBLIC_URL valham
+ * sem esperar a sessão reconectar. Falhas são só logadas.
+ */
+export async function reconfigureAllWhatsappWebhooks(): Promise<void> {
+  if (!resolveWhatsappWebhookUrl()) return;
+
+  const sessions = await prisma.whatsAppChannel.findMany({
+    where: { channel: { status: { in: ["WORKING", "CONNECTING"] } } },
+    select: { sessionName: true, webhookUrl: true },
+  });
+
+  for (const session of sessions) {
+    try {
+      await ensureWhatsappSessionWebhook(session.sessionName, session.webhookUrl);
+    } catch (error) {
+      console.error(
+        `[Webhook] Falha ao reconfigurar sessão ${session.sessionName}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
 }

@@ -129,11 +129,20 @@ async function main() {
   );
 
   // Equipe
-  await prisma.user.upsert({
-    where: { email: adminEmail },
-    create: { email: adminEmail, name: "Administrador", role: UserRole.ADMIN, operationId: operation.id },
-    update: { operationId: operation.id, role: UserRole.ADMIN },
-  });
+  // Não tira um usuário existente da operação real dele (a menos que forçado).
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (existingAdmin?.operationId && process.env.DEMO_FORCE_ATTACH !== "true") {
+    console.warn(
+      `Aviso: ${adminEmail} já pertence a outra operação; não foi movido. ` +
+        "Use um e-mail novo ou DEMO_FORCE_ATTACH=true para mover (esconde os dados reais dele).",
+    );
+  } else {
+    await prisma.user.upsert({
+      where: { email: adminEmail },
+      create: { email: adminEmail, name: "Administrador", role: UserRole.ADMIN, operationId: operation.id },
+      update: { operationId: operation.id, role: UserRole.ADMIN },
+    });
+  }
   const team = ["Marina Alves", "Carlos Souza", "Juliana Prado"];
   const agents = [];
   for (const [i, name] of team.entries()) {
