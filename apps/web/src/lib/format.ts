@@ -47,3 +47,51 @@ export function getInitials(name?: string | null, fallback = "?"): string {
     .join("")
     .toUpperCase();
 }
+
+/** Hora relativa curta para listas: "agora", "5 min", "14:32", "ontem", "12/10". */
+export function formatRelativeTime(dateValue: string | Date): string {
+  const date = new Date(dateValue);
+  const diffMin = Math.floor((Date.now() - date.getTime()) / 60_000);
+  if (diffMin < 1) return "agora";
+  if (diffMin < 60) return `${diffMin} min`;
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return formatClock(date);
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return "ontem";
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+export function formatClock(dateValue: string | Date): string {
+  return new Date(dateValue).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Rótulo de dia: "Hoje", "Ontem" ou "12 de outubro de 2026". */
+export function formatDayLabel(dateValue: string | Date): string {
+  const date = new Date(dateValue);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return "Hoje";
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return "Ontem";
+  return date.toLocaleDateString("pt-BR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/** Duração em segundos: "45 s", "2 min 30 s", "1 h 5 min". null -> "—". */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return "—";
+  const total = Math.round(seconds);
+  if (total < 60) return `${total} s`;
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return m > 0 ? `${h} h ${m} min` : `${h} h`;
+  return s > 0 ? `${m} min ${s} s` : `${m} min`;
+}

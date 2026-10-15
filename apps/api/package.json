@@ -21,6 +21,7 @@
     "db:migrate:server": "dotenv -e .env.server -- prisma migrate deploy",
     "db:studio": "dotenv -e .env -- prisma studio",
     "db:generate": "dotenv -e .env -- prisma generate",
+    "db:seed:demo": "dotenv -e .env -- tsx prisma/seed-demo.ts",
     "build": "tsc",
     "start": "node dist/src/index.js"
   },

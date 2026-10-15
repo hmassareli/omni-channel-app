@@ -37,10 +37,31 @@ import type {
   StageWithRelations,
   WhatsAppChat,
 } from "@omni/api/types";
+import type {
+  ContactDetail,
+  ConversationActionResponse,
+  ConversationDetail,
+  ConversationListItem,
+  CreateNoteResponse,
+  DeskMetricsResponse,
+  DeskQueue,
+  GetContactResponse,
+  GetConversationResponse,
+  GetConversationsResponse,
+  GetMessagesResponse,
+  GetQueuesResponse,
+  QueueResponse,
+  GetCompanyResponse,
+} from "@omni/api/api-types";
 import { supabase } from "./supabase";
 
 // Re-export types para facilitar uso nos componentes
 export type {
+  ContactDetail,
+  ConversationDetail,
+  ConversationListItem,
+  DeskMetricsResponse,
+  DeskQueue,
   Agent,
   AgentWithRelations,
   Channel,
@@ -70,14 +91,14 @@ export type OpportunityTimelineResponse = GetOpportunityTimelineResponse;
 export type OpportunityTimelineEvent =
   GetOpportunityTimelineResponse["events"][number];
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3333";
+export const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3333";
 
 interface ApiError {
   error: string;
   details?: unknown;
 }
 
-async function apiRequest<T>(
+export async function apiRequest<T>(
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body?: unknown,
@@ -105,7 +126,8 @@ async function apiRequest<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  const data = await response.json();
+  if (response.status === 204) return undefined as T;
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     const error = data as ApiError;
@@ -621,4 +643,144 @@ export async function linkWhatsAppChat(
     "/contacts/link-whatsapp",
     data,
   );
+}
+
+export async function getContact(id: string): Promise<ContactDetail> {
+  const response = await apiRequest<GetContactResponse>("GET", `/contacts/${id}`);
+  return response.contact;
+}
+
+export async function getCompanyWithRelations(id: string) {
+  const response = await apiRequest<GetCompanyResponse>("GET", `/companies/${id}`);
+  return response.company;
+}
+
+// ============================================================================
+// Mesa de atendimento (conversas)
+// ============================================================================
+
+export type ConversationStatusValue = ConversationListItem["status"];
+/** Tipos do Prisma com Date -> string (como chegam no JSON). */
+type Serialized<T> = T extends Date
+  ? string
+  : T extends object
+    ? { [K in keyof T]: Serialized<T[K]> }
+    : T;
+export type DeskMessage = Serialized<GetMessagesResponse["messages"][number]>;
+export type DeskNote = Serialized<CreateNoteResponse["event"]>;
+export type DeskMessagesPage = { messages: DeskMessage[]; hasMore: boolean };
+
+export interface ConversationFilters {
+  status?: ConversationStatusValue;
+  queueId?: string;
+  /** "me" | "unassigned" | id do atendente */
+  assignee?: string;
+  search?: string;
+  contactId?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export async function getConversations(
+  params: ConversationFilters = {},
+): Promise<GetConversationsResponse> {
+  const sp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") sp.set(key, String(value));
+  }
+  return apiRequest<GetConversationsResponse>("GET", `/conversations?${sp}`);
+}
+
+export async function getConversation(id: string): Promise<ConversationDetail> {
+  const r = await apiRequest<GetConversationResponse>("GET", `/conversations/${id}`);
+  return r.conversation;
+}
+
+export async function getConversationMessages(
+  id: string,
+  params?: { before?: string; limit?: number },
+): Promise<DeskMessagesPage> {
+  const sp = new URLSearchParams();
+  if (params?.before) sp.set("before", params.before);
+  if (params?.limit) sp.set("limit", String(params.limit));
+  return apiRequest<DeskMessagesPage>("GET", `/conversations/${id}/messages?${sp}`);
+}
+
+export async function sendConversationMessage(
+  id: string,
+  text: string,
+): Promise<DeskMessage> {
+  const r = await apiRequest<{ message: DeskMessage }>("POST", `/conversations/${id}/messages`, { text });
+  return r.message;
+}
+
+export async function assignConversation(
+  id: string,
+  data: { agentId?: string | null; queueId?: string | null },
+): Promise<ConversationDetail> {
+  const r = await apiRequest<ConversationActionResponse>("POST", `/conversations/${id}/assign`, data);
+  return r.conversation;
+}
+
+export async function setConversationStatus(
+  id: string,
+  status: ConversationStatusValue,
+): Promise<ConversationDetail> {
+  const r = await apiRequest<ConversationActionResponse>("POST", `/conversations/${id}/status`, { status });
+  return r.conversation;
+}
+
+export async function addConversationNote(id: string, text: string): Promise<DeskNote> {
+  const r = await apiRequest<{ event: DeskNote }>("POST", `/conversations/${id}/notes`, { text });
+  return r.event;
+}
+
+/**
+ * Notas internas da conversa. ATENCAO: rota ainda NAO existe no contrato
+ * (ver docs/ARCHITECTURE.md, "Pendencias"); falha com 404 ate a API expor.
+ */
+export async function getConversationNotes(id: string): Promise<DeskNote[]> {
+  const r = await apiRequest<{ events: DeskNote[] }>("GET", `/conversations/${id}/notes`);
+  return r.events;
+}
+
+export async function markConversationRead(id: string): Promise<void> {
+  await apiRequest<void>("POST", `/conversations/${id}/read`);
+}
+
+// ----------------------------------------------------------------------------
+// Filas
+// ----------------------------------------------------------------------------
+
+export async function getQueues(): Promise<DeskQueue[]> {
+  const r = await apiRequest<GetQueuesResponse>("GET", "/queues");
+  return r.queues;
+}
+
+export async function createQueue(name: string): Promise<DeskQueue> {
+  const r = await apiRequest<QueueResponse>("POST", "/queues", { name });
+  return r.queue;
+}
+
+export async function renameQueue(id: string, name: string): Promise<DeskQueue> {
+  const r = await apiRequest<QueueResponse>("PUT", `/queues/${id}`, { name });
+  return r.queue;
+}
+
+export async function deleteQueue(id: string): Promise<void> {
+  await apiRequest<void>("DELETE", `/queues/${id}`);
+}
+
+export async function setQueueMembers(id: string, agentIds: string[]): Promise<DeskQueue> {
+  const r = await apiRequest<QueueResponse>("PUT", `/queues/${id}/members`, { agentIds });
+  return r.queue;
+}
+
+// ----------------------------------------------------------------------------
+// Métricas
+// ----------------------------------------------------------------------------
+
+export async function getDeskMetrics(from: string, to: string): Promise<DeskMetricsResponse> {
+  const sp = new URLSearchParams({ from, to });
+  return apiRequest<DeskMetricsResponse>("GET", `/metrics/desk?${sp}`);
 }

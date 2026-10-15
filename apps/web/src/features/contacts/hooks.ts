@@ -1,6 +1,7 @@
 import {
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import * as api from "../../lib/api";
@@ -46,5 +47,14 @@ export function useWhatsAppChats(
       };
     },
     getNextPageParam: (last) => (last.hasMore ? last.nextOffset : undefined),
+  });
+}
+
+/** Detalhe do contato (identidades, tags, empresa e conversas). */
+export function useContact(id: string | undefined) {
+  return useQuery({
+    queryKey: ["contacts", "detail", id ?? ""] as const,
+    queryFn: () => api.getContact(id!),
+    enabled: !!id,
   });
 }

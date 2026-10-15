@@ -195,6 +195,14 @@ export async function addNote(
   return event;
 }
 
+export async function listNotes(actor: DeskActor, conversationId: string) {
+  await getVisibleConversation(actor, conversationId);
+  return prisma.timelineEvent.findMany({
+    where: { conversationId, type: EventType.NOTE },
+    orderBy: { occurredAt: "asc" },
+  });
+}
+
 export async function markRead(actor: DeskActor, conversationId: string) {
   await getVisibleConversation(actor, conversationId);
   await prisma.conversation.update({

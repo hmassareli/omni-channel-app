@@ -1,20 +1,28 @@
+import { lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { AuthCallback } from "./features/auth/pages/AuthCallback";
 import { RequireAuth, RequireOnboarding } from "./features/auth/guards";
-import { CompaniesPage } from "./features/companies/pages/CompaniesPage";
-import { CompanyPage } from "./features/companies/pages/CompanyPage";
-import { ContactTimelinePage } from "./features/contacts/pages/ContactTimelinePage";
+const CompaniesPage = lazy(() =>
+  import("./features/companies/pages/CompaniesPage").then((m) => ({ default: m.CompaniesPage })),
+);
+const CompanyPage = lazy(() =>
+  import("./features/companies/pages/CompanyPage").then((m) => ({ default: m.CompanyPage })),
+);
 import { OnboardingRoute } from "./features/onboarding/OnboardingRoute";
-import { OpportunitiesPage } from "./features/opportunities/pages/OpportunitiesPage";
-import { OpportunityPage } from "./features/opportunities/pages/OpportunityPage";
-import {
-  DashboardPage,
-  InboxPage,
-} from "./features/placeholders/pages/ComingSoonPage";
+const OpportunitiesPage = lazy(() =>
+  import("./features/opportunities/pages/OpportunitiesPage").then((m) => ({ default: m.OpportunitiesPage })),
+);
+const OpportunityPage = lazy(() =>
+  import("./features/opportunities/pages/OpportunityPage").then((m) => ({ default: m.OpportunityPage })),
+);
+const InboxPage = lazy(() => import("./features/inbox/pages/InboxPage"));
+const DashboardPage = lazy(() => import("./features/dashboard/pages/DashboardPage"));
+const QueuesPage = lazy(() => import("./features/queues/pages/QueuesPage"));
+const ContactPage = lazy(() => import("./features/contacts/pages/ContactPage"));
 
-/** Rota inicial. Trocar para "/inbox" quando a Inbox for lançada. */
-const HOME_PATH = "/opportunities";
+/** Rota inicial. */
+const HOME_PATH = "/inbox";
 
 export default function App() {
   return (
@@ -33,7 +41,8 @@ export default function App() {
             <Route path="/companies/:id" element={<CompanyPage />} />
             <Route path="/opportunities" element={<OpportunitiesPage />} />
             <Route path="/opportunities/:id" element={<OpportunityPage />} />
-            <Route path="/contacts/:id" element={<ContactTimelinePage />} />
+            <Route path="/contacts/:id" element={<ContactPage />} />
+            <Route path="/settings/queues" element={<QueuesPage />} />
             <Route path="*" element={<Navigate to={HOME_PATH} replace />} />
           </Route>
         </Route>

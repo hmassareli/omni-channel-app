@@ -2,21 +2,24 @@ import {
   Building2,
   LayoutDashboard,
   LogOut,
+  Layers,
   MessageSquare,
   Target,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useSession } from "../../features/auth/authContext";
 import { cn } from "../../lib/cn";
-import { Avatar } from "../ui";
+import { useDeskEvents } from "../../features/inbox/hooks";
+import { Avatar, Spinner } from "../ui";
 
 const NAV_ITEMS: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/inbox", label: "Inbox", icon: MessageSquare },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/companies", label: "Empresas", icon: Building2 },
   { to: "/opportunities", label: "Oportunidades", icon: Target },
+  { to: "/settings/queues", label: "Filas", icon: Layers },
 ];
 
 function SideNav() {
@@ -119,6 +122,7 @@ function UserMenu() {
 
 /** Layout das páginas autenticadas: navegação lateral, cabeçalho e conteúdo. */
 export function AppShell() {
+  useDeskEvents();
   return (
     <div className="flex h-screen bg-canvas">
       <SideNav />
@@ -127,7 +131,15 @@ export function AppShell() {
           <UserMenu />
         </div>
         <main className="flex min-h-0 flex-1 flex-col overflow-auto">
-          <Outlet />
+          <Suspense
+            fallback={
+              <div className="flex flex-1 items-center justify-center">
+                <Spinner />
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

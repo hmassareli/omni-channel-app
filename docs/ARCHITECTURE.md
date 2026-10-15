@@ -58,3 +58,12 @@ Componentes base em `src/components/ui/`: Button, Input, Select, Badge, Card, Av
 - Erros de regra: `{ error: string }` com 400/403/404/409/422/502 (502 = canal falhou ao enviar; nada é gravado).
 - CSAT: ao resolver, a pergunta é enviada pelo canal (falha não impede resolver) e `Conversation.csatRequestedAt` marca a espera. `onInboundMessage(conversationId, messageId?)` em `services/desk/hooks.ts` deve ser chamado pelo ingest após gravar mensagem INBOUND: incrementa unreadCount, trata CSAT (dígito 1-5 com espera pendente), reabre RESOLVED, chama `autoAssign` e emite `conversation.updated`.
 - A fila de uma conversa só é definida manualmente (assign com `queueId`); `autoAssign` exige conversa com fila.
+
+## Pendências do contrato (levantadas pelo front da mesa)
+- Falta `GET /conversations/:id/notes` → `{ events: TimelineEvent[] }` (NOTE da conversa). O front já chama essa rota; enquanto ela retornar 404, só aparecem as notas criadas na sessão atual.
+
+## Rodando a demo
+1. `docker compose up -d postgres` e `npm run db:migrate -w @omni/api`
+2. `DEMO_ADMIN_EMAIL=seu@email.com npm run db:seed:demo -w @omni/api` (cria a operação "Água Branca (Demo)")
+3. `npm run dev:api` e `npm run dev:web`; entre com o mesmo e-mail.
+Observação: o canal do seed não está conectado ao WAHA; enviar resposta nele retorna 502 até conectar uma sessão real.

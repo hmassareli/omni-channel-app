@@ -10,6 +10,7 @@ import {
   getConversationDetail,
   getVisibleConversation,
   listConversations,
+  listNotes,
   markRead,
   sendAgentMessage,
 } from "../../services/desk";
@@ -186,6 +187,17 @@ export async function conversationsRoutes(app: FastifyInstance) {
       const { id } = conversationParamsSchema.parse(request.params);
       const { status } = statusSchema.parse(request.body);
       return { conversation: await changeStatus(actor, id, status) };
+    }),
+  );
+
+  /** GET /conversations/:id/notes - notas internas da conversa */
+  app.get(
+    "/:id/notes",
+    { preHandler: authMiddleware },
+    deskHandler(async (actor, request, reply) => {
+      const { id } = conversationParamsSchema.parse(request.params);
+      const events = await listNotes(actor, id);
+      return reply.send({ events });
     }),
   );
 

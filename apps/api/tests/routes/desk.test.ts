@@ -346,6 +346,20 @@ describe("Mesa de atendimento (rotas)", () => {
       expect(adapter.sent).toHaveLength(0);
     });
 
+    it("GET notes lista só as notas da conversa; outra operação recebe 404", async () => {
+      const u = await createAuthedUser({ role: "AGENT" });
+      const c = await createDeskConversation(u.operationId);
+      await post(`/conversations/${c.conversation.id}/notes`, u.headers, { text: "nota 1" });
+
+      const res = await get(`/conversations/${c.conversation.id}/notes`, u.headers);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().events.map((e: { content: string }) => e.content)).toEqual(["nota 1"]);
+
+      const other = await createAuthedUser({ role: "ADMIN" });
+      const denied = await get(`/conversations/${c.conversation.id}/notes`, other.headers);
+      expect(denied.statusCode).toBe(404);
+    });
+
     it("POST read zera unreadCount (204)", async () => {
       const u = await createAuthedUser({ role: "AGENT" });
       const c = await createDeskConversation(u.operationId, { unreadCount: 4 });

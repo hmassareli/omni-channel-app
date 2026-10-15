@@ -25,9 +25,9 @@ src/
     layout/          AppShell, PageHeader, SidebarSection/InfoRow, LoadingScreen
   features/<nome>/   hooks.ts (TanStack Query), components/, pages/
     auth/ companies/ contacts/ opportunities/ operations/
-    onboarding/ timeline/ placeholders/
+    onboarding/ timeline/ inbox/ dashboard/ queues/
   hooks/useAuth.ts   estado de autenticação Supabase (use `useSession()` nas telas)
-  lib/               api.ts (cliente HTTP), format.ts, cn.ts, queryClient.ts
+  lib/               api.ts (cliente HTTP), events.ts (SSE com fetch), format.ts, cn.ts, queryClient.ts
 ```
 
 Regras: páginas em `features/*/pages` (< ~250 linhas), dados via hooks de `features/*/hooks.ts`

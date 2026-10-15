@@ -28,3 +28,12 @@ export function useChannels() {
     queryFn: api.getChannels,
   });
 }
+
+/** Usuário autenticado no backend (inclui `role`). */
+export function useMe() {
+  return useQuery({
+    queryKey: ["me"] as const,
+    queryFn: api.getCurrentUser,
+    staleTime: 5 * 60_000,
+  });
+}

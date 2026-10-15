@@ -1,4 +1,4 @@
-import { useId, type TextareaHTMLAttributes } from "react";
+import { useId, type Ref, type TextareaHTMLAttributes } from "react";
 import { cn } from "../../lib/cn";
 import { controlClass } from "./controlClass";
 import { Field } from "./Field";
@@ -8,6 +8,7 @@ export interface TextareaProps
   label?: string;
   hint?: string;
   error?: string;
+  ref?: Ref<HTMLTextAreaElement>;
 }
 
 export function Textarea({
@@ -17,6 +18,7 @@ export function Textarea({
   id,
   className,
   rows = 3,
+  ref,
   ...rest
 }: TextareaProps) {
   const autoId = useId();
@@ -24,6 +26,7 @@ export function Textarea({
   return (
     <Field label={label} hint={hint} error={error} htmlFor={textId}>
       <textarea
+        ref={ref}
         id={textId}
         rows={rows}
         aria-invalid={!!error}
