@@ -5,6 +5,9 @@ RUN apt-get update -y && apt-get install -y openssl python3 make g++
 
 WORKDIR /app
 
+# npm 10 (da imagem node:20) quebra ao resolver as dependências (arborist: 'edgesOut'); npm 11 resolve
+RUN npm install -g npm@11
+
 COPY package*.json ./
 COPY apps/api/package.json ./apps/api/
 

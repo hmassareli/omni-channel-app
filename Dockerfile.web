@@ -6,6 +6,9 @@ RUN apt-get update -y && apt-get install -y openssl
 
 WORKDIR /app
 
+# npm 10 (da imagem node:20) quebra ao resolver as dependências (arborist: 'edgesOut'); npm 11 resolve
+RUN npm install -g npm@11
+
 # Argumentos de build para variáveis do Vite (necessárias em build-time)
 # Nota: VITE_SUPABASE_ANON_KEY é uma chave pública por design (anon = anonymous)
 # Ela é feita para ser exposta no frontend, não é um secret real
