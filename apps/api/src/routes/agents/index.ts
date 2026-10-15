@@ -166,7 +166,7 @@ export async function agentsRoutes(app: FastifyInstance) {
         where: { id: body.userId },
         include: { agent: true },
       });
-      if (!user) {
+      if (!user || user.operationId !== existing.operationId) {
         return reply.status(404).send({ error: "Usuário não encontrado" });
       }
       if (user.agent && user.agent.id !== id) {

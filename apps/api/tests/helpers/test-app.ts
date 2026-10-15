@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/index";
+import { testTokenVerifier } from "./auth";
 
 let app: FastifyInstance | null = null;
 
@@ -9,7 +10,7 @@ let app: FastifyInstance | null = null;
  */
 export async function getTestApp(): Promise<FastifyInstance> {
   if (!app) {
-    app = await buildApp();
+    app = await buildApp({ tokenVerifier: testTokenVerifier });
     await app.ready();
   }
   return app!;

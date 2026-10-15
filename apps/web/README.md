@@ -1,73 +1,63 @@
-# React + TypeScript + Vite
+# @omni/web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend do CRM omnichannel: React 19, Vite, Tailwind v4, React Router, TanStack Query, Supabase Auth.
 
-Currently, two official plugins are available:
+## Como rodar
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install                       # na raiz do monorepo
+npm run dev --workspace=apps/web  # http://localhost:5173
+npm run build --workspace=apps/web
+npx eslint src                    # dentro de apps/web
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Variáveis (`.env`): `VITE_API_URL` (padrão `http://localhost:3333`), `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_REDIRECT_AUTH_URL` (opcional).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Estrutura
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+src/
+  App.tsx            rotas (react-router); HOME_PATH define a rota inicial
+  main.tsx           providers: QueryClient, Router, Auth
+  index.css          tokens de design (@theme) e fonte Inter
+  components/
+    ui/              design system (Button, Input, Dialog...)
+    layout/          AppShell, PageHeader, SidebarSection/InfoRow, LoadingScreen
+  features/<nome>/   hooks.ts (TanStack Query), components/, pages/
+    auth/ companies/ contacts/ opportunities/ operations/
+    onboarding/ timeline/ placeholders/
+  hooks/useAuth.ts   estado de autenticação Supabase (use `useSession()` nas telas)
+  lib/               api.ts (cliente HTTP), format.ts, cn.ts, queryClient.ts
+```
+
+Regras: páginas em `features/*/pages` (< ~250 linhas), dados via hooks de `features/*/hooks.ts`
+(nunca `useEffect` + `fetch`), URLs com `<Link>`/`useNavigate`.
+
+## Dados (TanStack Query)
+
+`lib/api.ts` continua sendo o cliente. Cada feature expõe hooks (`useCompany`, `useKanban`,
+`useCreateOpportunity`...) com chaves de cache próprias (`companyKeys`, `opportunityKeys`);
+mutations invalidam as chaves afetadas. Padrão de tela: `isPending` → `Skeleton`,
+`isError` → `ErrorState` (com `onRetry`), lista vazia → `EmptyState`.
+
+## Design system
+
+Tokens em `index.css`: paleta neutra slate + cor de destaque `accent` (indigo), estados
+`danger`/`success`/`warning`, superfícies (`bg-canvas`, `bg-surface`, `bg-subtle`), bordas
+(`border-line`), texto (`text-fg`, `text-fg-muted`, `text-fg-faint`), raios e sombras sutis.
+Nas telas use somente essas classes, nunca hex.
+
+Importe de `components/ui`:
+
+```tsx
+import { Button, Input, Select, Dialog, Badge, EmptyState } from "../../components/ui";
+
+<Button variant="primary|secondary|ghost|danger" size="sm|md|lg" loading icon={<Plus />}>Salvar</Button>
+<Input label="Nome" hint="..." error="..." icon={<Search />} />
+<Dialog open={open} onClose={close} title="Título" footer={<Button>OK</Button>}>...</Dialog>
+<Tabs tabs={[{ id: "a", label: "A", count: 3 }]} value={tab} onChange={setTab} />
+<EmptyState icon={Inbox} title="Vazio" description="..." action={<Button>Criar</Button>} />
+```
+
+Outros: `Textarea`, `Select`, `Badge` (tone), `Card/CardHeader/CardBody`, `Avatar` (iniciais),
+`Skeleton/SkeletonList`, `Spinner`, `ErrorState`.

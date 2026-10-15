@@ -1,7 +1,7 @@
 import { UserRole } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { authMiddleware } from "../../middleware/auth";
+import { authMiddleware, requireRole } from "../../middleware/auth";
 import { prisma } from "../../prisma";
 
 // ============================================================================
@@ -21,6 +21,8 @@ const updateUserSchema = z.object({
   role: z.enum(UserRole).optional(),
   operationId: z.string().nullable().optional(),
 });
+
+const manage = [authMiddleware, requireRole("ADMIN", "MANAGER")];
 
 const userParamsSchema = z.object({
   id: z.uuid("ID inválido"),
@@ -96,7 +98,7 @@ export async function usersRoutes(app: FastifyInstance) {
    * POST /users
    * Cria um novo usuário
    */
-  app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+  app.post("/", { preHandler: manage }, async (request, reply) => {
     const requester = request.user!;
     const body = createUserSchema.parse(request.body);
 
@@ -133,7 +135,7 @@ export async function usersRoutes(app: FastifyInstance) {
    * PUT /users/:id
    * Atualiza um usuário
    */
-  app.put("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+  app.put("/:id", { preHandler: manage }, async (request, reply) => {
     const requester = request.user!;
     const { id } = userParamsSchema.parse(request.params);
     const body = updateUserSchema.parse(request.body);
@@ -173,7 +175,7 @@ export async function usersRoutes(app: FastifyInstance) {
    * DELETE /users/:id
    * Remove um usuário
    */
-  app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+  app.delete("/:id", { preHandler: manage }, async (request, reply) => {
     const requester = request.user!;
     const { id } = userParamsSchema.parse(request.params);
 

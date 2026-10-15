@@ -45,6 +45,8 @@ afterAll(async () => {
 async function cleanDatabase() {
   // Ordem de deleção respeitando dependências
   const deleteOrder = [
+    "csatResponse",
+    "queueMember",
     "rawWhatsappMessage",
     "contactInsight",
     "contactTag",
@@ -55,7 +57,10 @@ async function cleanDatabase() {
     "contact",
     "insightDefinition",
     "tag",
+    "opportunity",
     "stage",
+    "company",
+    "queue",
     "whatsAppChannel",
     "channel",
     "agent",

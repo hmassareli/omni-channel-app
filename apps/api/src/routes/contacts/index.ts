@@ -58,6 +58,11 @@ const linkWhatsAppChatSchema = z.object({
   channelId: z.uuid("channelId inválido"), // Para criar a conversation
 });
 
+/** Contato visível na operação: tem conversa em canal da operação. */
+function inOperation(operationId: string | null): Prisma.ContactWhereInput {
+  return { conversations: { some: { channel: { operationId: operationId ?? "" } } } };
+}
+
 // ============================================================================
 // Routes
 // ============================================================================
@@ -126,7 +131,17 @@ export async function contactsRoutes(app: FastifyInstance) {
   });
 
   app.post("/", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
     const body = createContactSchema.parse(request.body);
+
+    if (body.companyId) {
+      const company = await prisma.company.findFirst({
+        where: { id: body.companyId, operationId: user.operationId },
+      });
+      if (!company) {
+        return reply.status(404).send({ error: "Empresa não encontrada" });
+      }
+    }
 
     // Verificar se já existe contato com mesmo telefone/email
     const identityConditions = [];
@@ -188,18 +203,21 @@ export async function contactsRoutes(app: FastifyInstance) {
     "/:id/link-company",
     { preHandler: authMiddleware },
     async (request, reply) => {
+      const user = request.user!;
       const { id } = contactParamsSchema.parse(request.params);
       const { companyId } = z
         .object({ companyId: z.uuid() })
         .parse(request.body);
 
-      const contact = await prisma.contact.findUnique({ where: { id } });
+      const contact = await prisma.contact.findFirst({
+        where: { id, ...inOperation(user.operationId) },
+      });
       if (!contact) {
         return reply.status(404).send({ error: "Contato não encontrado" });
       }
 
-      const company = await prisma.company.findUnique({
-        where: { id: companyId },
+      const company = await prisma.company.findFirst({
+        where: { id: companyId, operationId: user.operationId },
       });
       if (!company) {
         return reply.status(404).send({ error: "Empresa não encontrada" });
@@ -236,8 +254,8 @@ export async function contactsRoutes(app: FastifyInstance) {
       const body = linkWhatsAppChatSchema.parse(request.body);
 
       // Verifica se a empresa existe
-      const company = await prisma.company.findUnique({
-        where: { id: body.companyId },
+      const company = await prisma.company.findFirst({
+        where: { id: body.companyId, operationId: user.operationId },
       });
       if (!company) {
         return reply.status(404).send({ error: "Empresa não encontrada" });
@@ -475,8 +493,16 @@ export async function contactsRoutes(app: FastifyInstance) {
     "/:id/tags",
     { preHandler: authMiddleware },
     async (request, reply) => {
+      const user = request.user!;
       const { id } = contactParamsSchema.parse(request.params);
       const body = removeTagSchema.parse(request.body);
+
+      const contact = await prisma.contact.findFirst({
+        where: { id, ...inOperation(user.operationId) },
+      });
+      if (!contact) {
+        return reply.status(404).send({ error: "Contato não encontrado" });
+      }
 
       const existing = await prisma.contactTag.findUnique({
         where: { contactId_tagId: { contactId: id, tagId: body.tagId } },

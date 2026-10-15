@@ -115,7 +115,6 @@ export async function createChannel(
 export async function createContact(
   overrides: Partial<{
     name: string;
-    stageId: string;
   }> = {}
 ) {
   const id = uniqueId();
@@ -123,7 +122,6 @@ export async function createContact(
   return prisma.contact.create({
     data: {
       name: overrides.name ?? `Test Contact ${id}`,
-      stageId: overrides.stageId,
     },
   });
 }
