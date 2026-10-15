@@ -18,7 +18,7 @@ WEBHOOK_SECRET="${WEBHOOK_SECRET:-$(openssl rand -hex 24)}"
 KEY="$(grep '^EASYPANEL_API_KEY=' .env.deploy | cut -d= -f2- | tr -d '\r"')"
 [ -n "$KEY" ] || { echo "EASYPANEL_API_KEY ausente em .env.deploy"; exit 1; }
 
-# Fim do script Python (enviado por stdin; a chave segue na primeira linha)
+# Script Python executado no servidor (enviado em base64; a chave vai por stdin)
 PY=$(cat <<'EOF'
 import json, os, sys, urllib.request, urllib.parse
 
@@ -64,11 +64,9 @@ for svc in (api, web):
 EOF
 )
 
+B64=$(printf '%s' "$PY" | base64 | tr -d '\n')
 printf '%s\n%s\n' "$KEY" "$BRANCH $WEB_URL $WEBHOOK_SECRET" \
-  | ssh contabo "python3 -c 'import sys; key=sys.stdin.readline().strip(); exec(sys.argv[1])' \"\$(cat <<'PYEOF'
-$PY
-PYEOF
-)\"" 2>&1 || true
+  | ssh contabo "python3 -c 'import sys,base64; key=sys.stdin.readline().strip(); exec(base64.b64decode(\"$B64\"))'"
 
 echo
 echo "WEBHOOK_SECRET usado: $WEBHOOK_SECRET   (guarde; o crm-api já recebeu o mesmo valor)"
