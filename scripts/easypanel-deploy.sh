@@ -15,6 +15,10 @@ BRANCH="${BRANCH:-refactor/helpdesk-core}"
 WEB_URL="${WEB_URL:-https://crm-crm-web.lnyx9r.easypanel.host}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-$(openssl rand -hex 24)}"
 
+# No WSL, o alias "contabo" fica no config do Windows:
+#   SSH_OPTS="-F /mnt/c/Users/Henrique/.ssh/config" bash scripts/easypanel-deploy.sh
+SSH_OPTS="${SSH_OPTS:-}"
+
 KEY="$(grep '^EASYPANEL_API_KEY=' .env.deploy | cut -d= -f2- | tr -d '\r"')"
 [ -n "$KEY" ] || { echo "EASYPANEL_API_KEY ausente em .env.deploy"; exit 1; }
 
@@ -66,7 +70,7 @@ EOF
 
 B64=$(printf '%s' "$PY" | base64 | tr -d '\n')
 printf '%s\n%s\n' "$KEY" "$BRANCH $WEB_URL $WEBHOOK_SECRET" \
-  | ssh contabo "python3 -c 'import sys,base64; key=sys.stdin.readline().strip(); exec(base64.b64decode(\"$B64\"))'"
+  | ssh $SSH_OPTS contabo "python3 -c 'import sys,base64; key=sys.stdin.readline().strip(); exec(base64.b64decode(\"$B64\"))'"
 
 echo
 echo "WEBHOOK_SECRET usado: $WEBHOOK_SECRET   (guarde; o crm-api já recebeu o mesmo valor)"
