@@ -1,184 +1,157 @@
 import { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  createChannel,
-  createOperation,
-  createStage,
-  createTag,
-} from "../helpers/factories";
+import { prisma } from "../../src/prisma";
+import { createAuthedUser } from "../helpers/auth";
+import { client, NIL_UUID } from "../helpers/http";
 import { closeTestApp, getTestApp } from "../helpers/test-app";
 
 describe("Operations Routes", () => {
   let app: FastifyInstance;
+  let http: ReturnType<typeof client>;
 
   beforeAll(async () => {
     app = await getTestApp();
+    http = client(app);
   });
 
   afterAll(async () => {
     await closeTestApp();
   });
 
-  // =========================================================================
-  // GET /operations
-  // =========================================================================
+  async function userWithoutOperation(email = `semop-${Date.now()}@test.com`) {
+    const user = await prisma.user.create({ data: { email, name: "Sem Op", role: "ADMIN" } });
+    return { user, headers: { authorization: `Bearer ${user.email}` } };
+  }
+
+  it("exige token em todas as rotas", async () => {
+    expect((await http.get("/operations")).statusCode).toBe(401);
+    expect((await http.get(`/operations/${NIL_UUID}`)).statusCode).toBe(401);
+    expect((await http.post("/operations", {}, { name: "x" })).statusCode).toBe(401);
+    expect((await http.put(`/operations/${NIL_UUID}`, {}, { name: "x" })).statusCode).toBe(401);
+    expect((await http.del(`/operations/${NIL_UUID}`)).statusCode).toBe(401);
+  });
+
   describe("GET /operations", () => {
-    it("deve retornar lista vazia quando não há operations", async () => {
-      const response = await app.inject({
-        method: "GET",
-        url: "/operations",
-      });
-
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ operations: [] });
+    it("retorna a operação do usuário com contagens", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      const res = await http.get("/operations", a.headers);
+      expect(res.statusCode).toBe(200);
+      const { operation } = res.json();
+      expect(operation.id).toBe(a.operationId);
+      expect(operation._count).toMatchObject({ users: 1, agents: 1, channels: 0, tags: 0, stages: 0 });
     });
 
-    it("deve retornar operations com contagem de relacionamentos", async () => {
-      const operation = await createOperation({ name: "Test Operation" });
-      await createChannel({ operationId: operation.id });
-      await createStage({ operationId: operation.id });
-      await createTag({ operationId: operation.id });
-
-      const response = await app.inject({
-        method: "GET",
-        url: "/operations",
-      });
-
-      expect(response.statusCode).toBe(200);
-      const { operations } = response.json();
-      expect(operations).toHaveLength(1);
-      expect(operations[0].name).toBe("Test Operation");
-      expect(operations[0]._count.channels).toBe(1);
-      expect(operations[0]._count.stages).toBe(1);
-      expect(operations[0]._count.tags).toBe(1);
+    it("operation null quando o usuário não tem operação", async () => {
+      const { headers } = await userWithoutOperation();
+      const res = await http.get("/operations", headers);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ operation: null });
     });
   });
 
-  // =========================================================================
-  // GET /operations/:id
-  // =========================================================================
   describe("GET /operations/:id", () => {
-    it("deve retornar uma operation específica com relacionamentos", async () => {
-      const operation = await createOperation({ name: "My Operation" });
-      await createChannel({ name: "WhatsApp 1", operationId: operation.id });
-      await createStage({ name: "Lead", operationId: operation.id });
-
-      const response = await app.inject({
-        method: "GET",
-        url: `/operations/${operation.id}`,
-      });
-
-      expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.operation.name).toBe("My Operation");
-      expect(data.operation.channels).toHaveLength(1);
-      expect(data.operation.stages).toHaveLength(1);
+    it("retorna a própria operação com relações", async () => {
+      const a = await createAuthedUser({ role: "AGENT" });
+      const res = await http.get(`/operations/${a.operationId}`, a.headers);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().operation.users).toHaveLength(1);
+      expect(res.json().operation.agents).toHaveLength(1);
     });
 
-    it("deve retornar 404 se operation não existe", async () => {
-      const fakeId = "11111111-1111-4111-8111-111111111111";
-      const response = await app.inject({
-        method: "GET",
-        url: `/operations/${fakeId}`,
-      });
-
-      expect(response.statusCode).toBe(404);
-      expect(response.json()).toHaveProperty("error");
+    it("403 para operação de outro", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      const b = await createAuthedUser({ role: "ADMIN" });
+      expect((await http.get(`/operations/${b.operationId}`, a.headers)).statusCode).toBe(403);
     });
   });
 
-  // =========================================================================
-  // POST /operations
-  // =========================================================================
   describe("POST /operations", () => {
-    it("deve criar uma nova operation", async () => {
-      const response = await app.inject({
-        method: "POST",
-        url: "/operations",
-        payload: {
-          name: "Nova Operation",
-        },
-      });
-
-      expect(response.statusCode).toBe(201);
-      const { operation } = response.json();
-      expect(operation.name).toBe("Nova Operation");
-      expect(operation.id).toBeDefined();
+    it("cria a operação e vincula ao usuário", async () => {
+      const { user, headers } = await userWithoutOperation();
+      const res = await http.post("/operations", headers, { name: "Minha Operação" });
+      expect(res.statusCode).toBe(201);
+      const op = res.json().operation;
+      expect(op.name).toBe("Minha Operação");
+      expect((await prisma.user.findUnique({ where: { id: user.id } }))?.operationId).toBe(op.id);
     });
 
-    it("deve retornar erro se nome não fornecido", async () => {
-      const response = await app.inject({
-        method: "POST",
-        url: "/operations",
-        payload: {},
-      });
+    it("400 se o usuário já possui operação", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      expect((await http.post("/operations", a.headers, { name: "Outra" })).statusCode).toBe(400);
+    });
 
-      expect(response.statusCode).toBe(400);
+    it("400 sem nome", async () => {
+      const { headers } = await userWithoutOperation();
+      expect((await http.post("/operations", headers, {})).statusCode).toBe(400);
+      expect((await http.post("/operations", headers, { name: "" })).statusCode).toBe(400);
     });
   });
 
-  // =========================================================================
-  // PUT /operations/:id
-  // =========================================================================
   describe("PUT /operations/:id", () => {
-    it("deve atualizar uma operation", async () => {
-      const operation = await createOperation({ name: "Old Name" });
-
-      const response = await app.inject({
-        method: "PUT",
-        url: `/operations/${operation.id}`,
-        payload: {
-          name: "New Name",
-        },
-      });
-
-      expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.operation.name).toBe("New Name");
+    it("atualiza o nome", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      const res = await http.put(`/operations/${a.operationId}`, a.headers, { name: "Renomeada" });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().operation.name).toBe("Renomeada");
     });
 
-    it("deve retornar 404 se operation não existe", async () => {
-      const fakeId = "11111111-1111-4111-8111-111111111111";
-      const response = await app.inject({
-        method: "PUT",
-        url: `/operations/${fakeId}`,
-        payload: { name: "Test" },
-      });
+    it("onboardingCompleted cria os 6 stages padrão uma única vez", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      const res = await http.put(`/operations/${a.operationId}`, a.headers, { onboardingCompleted: true });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().operation.onboardingCompleted).toBe(true);
 
-      expect(response.statusCode).toBe(404);
+      const stages = await prisma.stage.findMany({ where: { operationId: a.operationId }, orderBy: { order: "asc" } });
+      expect(stages.map((s) => s.slug)).toEqual([
+        "suspect",
+        "prospect",
+        "mapeamento",
+        "demonstracao",
+        "negociacao",
+        "fechamento",
+      ]);
+
+      await http.put(`/operations/${a.operationId}`, a.headers, { onboardingCompleted: true });
+      expect(await prisma.stage.count({ where: { operationId: a.operationId } })).toBe(6);
+    });
+
+    it("não recria stages se a operação já tem stages", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      await prisma.stage.create({ data: { name: "Meu", slug: "meu", operationId: a.operationId } });
+      await http.put(`/operations/${a.operationId}`, a.headers, { onboardingCompleted: true });
+      expect(await prisma.stage.count({ where: { operationId: a.operationId } })).toBe(1);
+    });
+
+    it("403 para operação de outro e nada é alterado", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      const b = await createAuthedUser({ role: "ADMIN" });
+      const before = await prisma.operation.findUnique({ where: { id: b.operationId } });
+      const res = await http.put(`/operations/${b.operationId}`, a.headers, { name: "Hack" });
+      expect(res.statusCode).toBe(403);
+      expect((await prisma.operation.findUnique({ where: { id: b.operationId } }))?.name).toBe(before?.name);
     });
   });
 
-  // =========================================================================
-  // DELETE /operations/:id
-  // =========================================================================
   describe("DELETE /operations/:id", () => {
-    it("deve deletar uma operation", async () => {
-      const operation = await createOperation({ name: "To Delete" });
-
-      const response = await app.inject({
-        method: "DELETE",
-        url: `/operations/${operation.id}`,
-      });
-
-      expect(response.statusCode).toBe(204);
-
-      // Verifica que foi deletada
-      const checkResponse = await app.inject({
-        method: "GET",
-        url: `/operations/${operation.id}`,
-      });
-      expect(checkResponse.statusCode).toBe(404);
+    it("ADMIN remove a própria operação (204)", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      expect((await http.del(`/operations/${a.operationId}`, a.headers)).statusCode).toBe(204);
+      expect(await prisma.operation.findUnique({ where: { id: a.operationId } })).toBeNull();
     });
 
-    it("deve retornar 404 se operation não existe", async () => {
-      const fakeId = "11111111-1111-4111-8111-111111111111";
-      const response = await app.inject({
-        method: "DELETE",
-        url: `/operations/${fakeId}`,
-      });
+    it("403 para MANAGER e AGENT", async () => {
+      const m = await createAuthedUser({ role: "MANAGER" });
+      const ag = await createAuthedUser({ role: "AGENT" });
+      expect((await http.del(`/operations/${m.operationId}`, m.headers)).statusCode).toBe(403);
+      expect((await http.del(`/operations/${ag.operationId}`, ag.headers)).statusCode).toBe(403);
+      expect(await prisma.operation.findUnique({ where: { id: m.operationId } })).not.toBeNull();
+    });
 
-      expect(response.statusCode).toBe(404);
+    it("403 para operação de outro ADMIN", async () => {
+      const a = await createAuthedUser({ role: "ADMIN" });
+      const b = await createAuthedUser({ role: "ADMIN" });
+      expect((await http.del(`/operations/${b.operationId}`, a.headers)).statusCode).toBe(403);
+      expect(await prisma.operation.findUnique({ where: { id: b.operationId } })).not.toBeNull();
     });
   });
 });

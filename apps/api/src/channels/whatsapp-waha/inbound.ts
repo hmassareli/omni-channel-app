@@ -82,13 +82,20 @@ export async function handleWhatsappMessage(
   event: MessageEvent,
   body: unknown,
 ): Promise<IngestResult> {
-  const rawRecord = await prisma.rawWhatsappMessage.create({
-    data: {
-      wahaId: wahaIdOf(event.message.raw),
-      payload: body as Prisma.JsonObject,
-      processed: false,
-    },
-  });
+  // wahaId é único: reenvio do webhook reaproveita o registro cru (idempotência).
+  const wahaId = wahaIdOf(event.message.raw);
+  const existingRaw = wahaId
+    ? await prisma.rawWhatsappMessage.findUnique({ where: { wahaId } })
+    : null;
+  const rawRecord =
+    existingRaw ??
+    (await prisma.rawWhatsappMessage.create({
+      data: {
+        wahaId,
+        payload: body as Prisma.JsonObject,
+        processed: false,
+      },
+    }));
 
   const markProcessed = () =>
     prisma.rawWhatsappMessage.update({
@@ -118,13 +125,19 @@ export async function handleIgnoredWhatsappEvent(
   body: unknown,
 ): Promise<{ skipped: true; reason: string }> {
   if (event.reason !== MISSING_CHANNEL_REASON && event.raw !== undefined) {
-    await prisma.rawWhatsappMessage.create({
-      data: {
-        wahaId: wahaIdOf(event.raw),
-        payload: body as Prisma.JsonObject,
-        processed: true,
-      },
-    });
+    const wahaId = wahaIdOf(event.raw);
+    const exists = wahaId
+      ? await prisma.rawWhatsappMessage.findUnique({ where: { wahaId } })
+      : null;
+    if (!exists) {
+      await prisma.rawWhatsappMessage.create({
+        data: {
+          wahaId,
+          payload: body as Prisma.JsonObject,
+          processed: true,
+        },
+      });
+    }
   }
 
   logWebhookDebug("inbound:skipped", { reason: event.reason });

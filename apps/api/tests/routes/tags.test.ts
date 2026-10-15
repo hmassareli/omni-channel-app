@@ -1,238 +1,182 @@
 import { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createOperation, createTag } from "../helpers/factories";
+import { prisma } from "../../src/prisma";
+import { createAuthedUser } from "../helpers/auth";
+import { createTag } from "../helpers/factories";
+import { client, NIL_UUID } from "../helpers/http";
 import { closeTestApp, getTestApp } from "../helpers/test-app";
 
 describe("Tags Routes", () => {
   let app: FastifyInstance;
+  let http: ReturnType<typeof client>;
 
   beforeAll(async () => {
     app = await getTestApp();
+    http = client(app);
   });
 
   afterAll(async () => {
     await closeTestApp();
   });
 
-  // =========================================================================
-  // GET /tags
-  // =========================================================================
+  it("exige token em todas as rotas", async () => {
+    expect((await http.get("/tags")).statusCode).toBe(401);
+    expect((await http.get(`/tags/${NIL_UUID}`)).statusCode).toBe(401);
+    expect((await http.post("/tags", {}, { name: "x", operationId: "y" })).statusCode).toBe(401);
+    expect((await http.put(`/tags/${NIL_UUID}`, {}, { name: "x" })).statusCode).toBe(401);
+    expect((await http.del(`/tags/${NIL_UUID}`)).statusCode).toBe(401);
+  });
+
   describe("GET /tags", () => {
-    it("deve retornar lista vazia quando não há tags", async () => {
-      const response = await app.inject({
-        method: "GET",
-        url: "/tags",
-      });
-
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ tags: [] });
+    it("lista vazia quando não há tags", async () => {
+      const a = await createAuthedUser();
+      const res = await http.get("/tags", a.headers);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ tags: [] });
     });
 
-    it("deve retornar tags ordenadas por nome", async () => {
-      const operation = await createOperation();
-      await createTag({ name: "Zebra", operationId: operation.id });
-      await createTag({ name: "Alpha", operationId: operation.id });
-      await createTag({ name: "Beta", operationId: operation.id });
+    it("lista só as tags da operação, ordenadas por nome", async () => {
+      const a = await createAuthedUser();
+      const b = await createAuthedUser();
+      await createTag({ name: "Zeta", slug: "zeta", operationId: a.operationId });
+      await createTag({ name: "Alfa", slug: "alfa", operationId: a.operationId });
+      await createTag({ name: "Alheia", slug: "alheia", operationId: b.operationId });
 
-      const response = await app.inject({
-        method: "GET",
-        url: "/tags",
-      });
-
-      expect(response.statusCode).toBe(200);
-      const { tags } = response.json();
-      expect(tags).toHaveLength(3);
-      expect(tags[0].name).toBe("Alpha");
-      expect(tags[1].name).toBe("Beta");
-      expect(tags[2].name).toBe("Zebra");
+      const res = await http.get("/tags", a.headers);
+      expect(res.json().tags.map((t: { name: string }) => t.name)).toEqual(["Alfa", "Zeta"]);
     });
 
-    it("deve filtrar tags por operationId", async () => {
-      const op1 = await createOperation();
-      const op2 = await createOperation();
-      await createTag({ name: "Tag Op1", operationId: op1.id });
-      await createTag({ name: "Tag Op2", operationId: op2.id });
+    it("filtra por isActive", async () => {
+      const a = await createAuthedUser();
+      const tag = await createTag({ name: "Velha", operationId: a.operationId });
+      await createTag({ name: "Nova", operationId: a.operationId });
+      await prisma.tag.update({ where: { id: tag.id }, data: { isActive: false } });
 
-      const response = await app.inject({
-        method: "GET",
-        url: `/tags?operationId=${op1.id}`,
-      });
-
-      expect(response.statusCode).toBe(200);
-      const { tags } = response.json();
-      expect(tags).toHaveLength(1);
-      expect(tags[0].name).toBe("Tag Op1");
+      const active = await http.get("/tags?isActive=true", a.headers);
+      expect(active.json().tags.map((t: { name: string }) => t.name)).toEqual(["Nova"]);
+      const inactive = await http.get("/tags?isActive=false", a.headers);
+      expect(inactive.json().tags.map((t: { name: string }) => t.name)).toEqual(["Velha"]);
     });
   });
 
-  // =========================================================================
-  // GET /tags/:id
-  // =========================================================================
   describe("GET /tags/:id", () => {
-    it("deve retornar uma tag específica", async () => {
-      const tag = await createTag({ name: "VIP", color: "#FF0000" });
-
-      const response = await app.inject({
-        method: "GET",
-        url: `/tags/${tag.id}`,
-      });
-
-      expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.tag.name).toBe("VIP");
-      expect(data.tag.color).toBe("#FF0000");
+    it("retorna a tag da operação", async () => {
+      const a = await createAuthedUser();
+      const tag = await createTag({ name: "VIP", operationId: a.operationId });
+      const res = await http.get(`/tags/${tag.id}`, a.headers);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().tag.name).toBe("VIP");
     });
 
-    it("deve retornar 404 se tag não existe", async () => {
-      const fakeId = "11111111-1111-4111-8111-111111111111";
-      const response = await app.inject({
-        method: "GET",
-        url: `/tags/${fakeId}`,
-      });
+    it("404 para tag de outra operação", async () => {
+      const a = await createAuthedUser();
+      const b = await createAuthedUser();
+      const tag = await createTag({ operationId: b.operationId });
+      expect((await http.get(`/tags/${tag.id}`, a.headers)).statusCode).toBe(404);
+    });
 
-      expect(response.statusCode).toBe(404);
+    it("400 para id inválido", async () => {
+      const a = await createAuthedUser();
+      expect((await http.get("/tags/xyz", a.headers)).statusCode).toBe(400);
     });
   });
 
-  // =========================================================================
-  // POST /tags
-  // =========================================================================
   describe("POST /tags", () => {
-    it("deve criar uma nova tag", async () => {
-      const operation = await createOperation();
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/tags",
-        payload: {
-          name: "Nova Tag",
-          operationId: operation.id,
-        },
+    it("cria tag na operação do usuário e gera slug do nome", async () => {
+      const a = await createAuthedUser();
+      const b = await createAuthedUser();
+      const res = await http.post("/tags", a.headers, {
+        name: "Cliente VIP",
+        operationId: b.operationId,
+        color: "#FF0000",
       });
-
-      expect(response.statusCode).toBe(201);
-      const { tag } = response.json();
-      expect(tag.name).toBe("Nova Tag");
-      expect(tag.slug).toBe("nova-tag");
+      expect(res.statusCode).toBe(201);
+      expect(res.json().tag).toMatchObject({
+        name: "Cliente VIP",
+        slug: "cliente-vip",
+        color: "#FF0000",
+        operationId: a.operationId,
+      });
     });
 
-    it("deve criar tag com todos os campos", async () => {
-      const operation = await createOperation();
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/tags",
-        payload: {
-          name: "Premium",
-          slug: "premium-cliente",
-          operationId: operation.id,
-          color: "#FFD700",
-          promptCondition: "quando cliente for premium",
-        },
+    it("usa o slug informado", async () => {
+      const a = await createAuthedUser();
+      const res = await http.post("/tags", a.headers, {
+        name: "Qualquer",
+        slug: "meu-slug",
+        operationId: a.operationId,
       });
-
-      expect(response.statusCode).toBe(201);
-      const { tag } = response.json();
-      expect(tag.slug).toBe("premium-cliente");
-      expect(tag.color).toBe("#FFD700");
-      expect(tag.promptCondition).toBe("quando cliente for premium");
+      expect(res.json().tag.slug).toBe("meu-slug");
     });
 
-    it("deve retornar 404 se operation não existe", async () => {
-      const fakeId = "11111111-1111-4111-8111-111111111111";
-      const response = await app.inject({
-        method: "POST",
-        url: "/tags",
-        payload: {
-          name: "Tag",
-          operationId: fakeId,
-        },
-      });
+    it("409 para nome duplicado na mesma operação, mas permite em outra", async () => {
+      const a = await createAuthedUser();
+      const b = await createAuthedUser();
+      await createTag({ name: "Dup", slug: "dup", operationId: a.operationId });
 
-      expect(response.statusCode).toBe(404);
+      const conflict = await http.post("/tags", a.headers, { name: "Dup", slug: "dup2", operationId: a.operationId });
+      expect(conflict.statusCode).toBe(409);
+
+      const ok = await http.post("/tags", b.headers, { name: "Dup", slug: "dup", operationId: b.operationId });
+      expect(ok.statusCode).toBe(201);
     });
 
-    it("deve retornar 409 se já existe tag com mesmo nome na operation", async () => {
-      const operation = await createOperation();
-      await createTag({ name: "Duplicada", operationId: operation.id });
+    it("400 para cor, slug ou nome inválidos", async () => {
+      const a = await createAuthedUser();
+      const base = { operationId: a.operationId };
+      expect((await http.post("/tags", a.headers, { ...base, name: "A", color: "vermelho" })).statusCode).toBe(400);
+      expect((await http.post("/tags", a.headers, { ...base, name: "A", slug: "Slug Inválido" })).statusCode).toBe(400);
+      expect((await http.post("/tags", a.headers, { ...base, name: "" })).statusCode).toBe(400);
+    });
 
-      const response = await app.inject({
-        method: "POST",
-        url: "/tags",
-        payload: {
-          name: "Duplicada",
-          operationId: operation.id,
-        },
-      });
-
-      expect(response.statusCode).toBe(409);
+    it("400 para usuário sem operação", async () => {
+      const u = await prisma.user.create({ data: { email: "orfao-tag@test.com", name: "O" } });
+      const res = await http.post("/tags", { authorization: `Bearer ${u.email}` }, { name: "A", operationId: "x" });
+      expect(res.statusCode).toBe(400);
     });
   });
 
-  // =========================================================================
-  // PUT /tags/:id
-  // =========================================================================
   describe("PUT /tags/:id", () => {
-    it("deve atualizar uma tag", async () => {
-      const tag = await createTag({ name: "Old Name" });
-
-      const response = await app.inject({
-        method: "PUT",
-        url: `/tags/${tag.id}`,
-        payload: {
-          name: "New Name",
-          color: "#00FF00",
-        },
-      });
-
-      expect(response.statusCode).toBe(200);
-      const data = response.json();
-      expect(data.tag.name).toBe("New Name");
-      expect(data.tag.color).toBe("#00FF00");
+    it("atualiza campos", async () => {
+      const a = await createAuthedUser();
+      const tag = await createTag({ name: "Velho", operationId: a.operationId });
+      const res = await http.put(`/tags/${tag.id}`, a.headers, { name: "Novo", color: "#00FF00", isActive: false });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().tag).toMatchObject({ name: "Novo", color: "#00FF00", isActive: false });
     });
 
-    it("deve retornar 404 se tag não existe", async () => {
-      const fakeId = "11111111-1111-4111-8111-111111111111";
-      const response = await app.inject({
-        method: "PUT",
-        url: `/tags/${fakeId}`,
-        payload: { name: "Test" },
-      });
+    it("409 ao renomear para nome existente", async () => {
+      const a = await createAuthedUser();
+      await createTag({ name: "Existe", operationId: a.operationId });
+      const tag = await createTag({ name: "Outra", operationId: a.operationId });
+      const res = await http.put(`/tags/${tag.id}`, a.headers, { name: "Existe" });
+      expect(res.statusCode).toBe(409);
+    });
 
-      expect(response.statusCode).toBe(404);
+    it("404 para tag de outra operação e não altera", async () => {
+      const a = await createAuthedUser();
+      const b = await createAuthedUser();
+      const tag = await createTag({ name: "Intacta", operationId: b.operationId });
+      const res = await http.put(`/tags/${tag.id}`, a.headers, { name: "Hack" });
+      expect(res.statusCode).toBe(404);
+      expect((await prisma.tag.findUnique({ where: { id: tag.id } }))?.name).toBe("Intacta");
     });
   });
 
-  // =========================================================================
-  // DELETE /tags/:id
-  // =========================================================================
   describe("DELETE /tags/:id", () => {
-    it("deve deletar uma tag", async () => {
-      const tag = await createTag({ name: "To Delete" });
-
-      const response = await app.inject({
-        method: "DELETE",
-        url: `/tags/${tag.id}`,
-      });
-
-      expect(response.statusCode).toBe(204);
-
-      // Verifica que foi deletada
-      const checkResponse = await app.inject({
-        method: "GET",
-        url: `/tags/${tag.id}`,
-      });
-      expect(checkResponse.statusCode).toBe(404);
+    it("remove a tag (204)", async () => {
+      const a = await createAuthedUser();
+      const tag = await createTag({ operationId: a.operationId });
+      expect((await http.del(`/tags/${tag.id}`, a.headers)).statusCode).toBe(204);
+      expect(await prisma.tag.findUnique({ where: { id: tag.id } })).toBeNull();
     });
 
-    it("deve retornar 404 se tag não existe", async () => {
-      const fakeId = "11111111-1111-4111-8111-111111111111";
-      const response = await app.inject({
-        method: "DELETE",
-        url: `/tags/${fakeId}`,
-      });
-
-      expect(response.statusCode).toBe(404);
+    it("404 para tag de outra operação e não remove", async () => {
+      const a = await createAuthedUser();
+      const b = await createAuthedUser();
+      const tag = await createTag({ operationId: b.operationId });
+      expect((await http.del(`/tags/${tag.id}`, a.headers)).statusCode).toBe(404);
+      expect(await prisma.tag.findUnique({ where: { id: tag.id } })).not.toBeNull();
     });
   });
 });
