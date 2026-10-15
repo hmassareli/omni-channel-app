@@ -1,23 +1,8 @@
-import { FastifyReply, FastifyRequest } from "fastify";
 import { createClient } from "@supabase/supabase-js";
+import { FastifyReply, FastifyRequest } from "fastify";
+import { createRemoteJWKSet, jwtVerify } from "jose";
+import { config } from "../config";
 import { prisma } from "../prisma";
-
-// ============================================================================
-// Supabase Client para validar tokens
-// ============================================================================
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.warn(
-    "[Auth] SUPABASE_URL ou SUPABASE_ANON_KEY não configurados - autenticação desabilitada"
-  );
-}
-
-const supabase = SUPABASE_URL && SUPABASE_ANON_KEY 
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
 
 // ============================================================================
 // Types
@@ -31,137 +16,168 @@ export interface AuthenticatedUser {
   operationId: string | null;
 }
 
-// Estende o tipo do Fastify Request para incluir user
+/** Valida um bearer token e devolve o e-mail da identidade, ou null. */
+export type TokenVerifier = (token: string) => Promise<{ email: string } | null>;
+
 declare module "fastify" {
   interface FastifyRequest {
     user?: AuthenticatedUser;
+    /** Identidade validada (e-mail) mesmo quando o usuário ainda não existe no banco. */
+    identityEmail?: string;
   }
 }
 
 // ============================================================================
-// Middleware de Autenticação
+// Verificador de token (Supabase)
 // ============================================================================
 
 /**
- * Middleware que valida o token JWT do Supabase e injeta o usuário no request
+ * Valida o JWT localmente (assinatura), sem round-trip ao Supabase a cada request.
+ * Usa o segredo HS256 se configurado; caso contrário, o JWKS público do projeto.
  */
+export function createSupabaseTokenVerifier(): TokenVerifier | null {
+  const url = config.supabaseUrl;
+  if (!url) return null;
+
+  const issuer = `${url.replace(/\/+$/, "")}/auth/v1`;
+  const secret = config.supabaseJwtSecret;
+  const jwks = secret
+    ? null
+    : createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+
+  return async (token) => {
+    try {
+      const options = { issuer, audience: "authenticated" };
+      const { payload } = secret
+        ? await jwtVerify(token, new TextEncoder().encode(secret), options)
+        : await jwtVerify(token, jwks!, options);
+      const email = typeof payload.email === "string" ? payload.email : null;
+      return email ? { email: email.toLowerCase() } : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/** Fallback opcional (AUTH_VERIFY_MODE=remote): valida via API do Supabase. */
+export function createRemoteTokenVerifier(): TokenVerifier | null {
+  if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
+  const supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
+  return async (token) => {
+    const { data, error } = await supabase.auth.getUser(token);
+    const email = data?.user?.email;
+    return error || !email ? null : { email: email.toLowerCase() };
+  };
+}
+
+let verifier: TokenVerifier | null | undefined;
+
+/** Permite injetar um verificador (testes) sem tocar no Supabase. */
+export function setTokenVerifier(custom: TokenVerifier | null | undefined) {
+  verifier = custom;
+}
+
+function getVerifier(): TokenVerifier | null {
+  if (verifier === undefined) {
+    verifier =
+      process.env.AUTH_VERIFY_MODE === "remote"
+        ? createRemoteTokenVerifier()
+        : createSupabaseTokenVerifier();
+    if (!verifier) {
+      console.warn("[Auth] SUPABASE_URL não configurado - autenticação indisponível");
+    }
+  }
+  return verifier;
+}
+
+// ============================================================================
+// Middlewares
+// ============================================================================
+
+function bearerToken(request: FastifyRequest): string | null {
+  const header = request.headers.authorization;
+  return header?.startsWith("Bearer ") ? header.slice(7) : null;
+}
+
+const userSelect = {
+  id: true,
+  email: true,
+  name: true,
+  role: true,
+  operationId: true,
+} as const;
+
+/** Valida o token e injeta request.identityEmail. Não exige usuário no banco. */
+export async function identityMiddleware(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const verify = getVerifier();
+  if (!verify) {
+    return reply
+      .status(500)
+      .send({ error: "Autenticação não configurada no servidor" });
+  }
+
+  const token = bearerToken(request);
+  if (!token) {
+    return reply
+      .status(401)
+      .send({ error: "Token de autenticação não fornecido" });
+  }
+
+  const identity = await verify(token);
+  if (!identity) {
+    return reply.status(401).send({ error: "Token inválido ou expirado" });
+  }
+
+  request.identityEmail = identity.email;
+}
+
+/** Exige token válido e usuário cadastrado; injeta request.user. */
 export async function authMiddleware(
   request: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
-  if (!supabase) {
-    return reply.status(500).send({
-      error: "Autenticação não configurada no servidor",
-    });
+  await identityMiddleware(request, reply);
+  if (reply.sent) return;
+
+  const dbUser = await prisma.user.findUnique({
+    where: { email: request.identityEmail! },
+    select: userSelect,
+  });
+
+  if (!dbUser) {
+    return reply.status(403).send({ error: "Usuário não cadastrado no sistema" });
   }
 
-  // Extrai o token do header Authorization
-  const authHeader = request.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return reply.status(401).send({
-      error: "Token de autenticação não fornecido",
-    });
-  }
-
-  const token = authHeader.replace("Bearer ", "");
-
-  try {
-    // Valida o token com o Supabase
-    const { data, error } = await supabase.auth.getUser(token);
-
-    if (error) {
-      console.error("[Auth] Erro ao validar token:", error);
-      return reply.status(401).send({
-        error: "Token inválido ou expirado",
-      });
-    }
-
-    if (!data.user) {
-      console.error("[Auth] Token válido mas sem usuário");
-      return reply.status(401).send({
-        error: "Token inválido ou expirado",
-      });
-    }
-
-    const email = data.user.email;
-
-    if (!email) {
-      console.error("[Auth] Usuário sem email");
-      return reply.status(401).send({
-        error: "Usuário sem email",
-      });
-    }
-
-    // Busca o usuário no banco de dados
-    const dbUser = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        operationId: true,
-      },
-    });
-
-    if (!dbUser) {
-      return reply.status(403).send({
-        error: "Usuário não cadastrado no sistema",
-      });
-    }
-
-    // Injeta o usuário autenticado no request
-    request.user = dbUser;
-  } catch (error) {
-    console.error("[Auth] Erro ao validar token:", error);
-    return reply.status(401).send({
-      error: "Erro ao validar autenticação",
-    });
-  }
+  request.user = dbUser;
 }
 
-/**
- * Middleware opcional - permite acesso sem autenticação mas injeta user se tiver token
- */
+/** Injeta request.user se houver token válido; nunca bloqueia. */
 export async function optionalAuthMiddleware(
   request: FastifyRequest,
-  _reply: FastifyReply
+  _reply: FastifyReply,
 ) {
-  if (!supabase) {
-    return;
-  }
+  const verify = getVerifier();
+  const token = bearerToken(request);
+  if (!verify || !token) return;
 
-  const authHeader = request.headers.authorization;
+  const identity = await verify(token);
+  if (!identity) return;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return; // Sem token, continua sem user
-  }
+  const dbUser = await prisma.user.findUnique({
+    where: { email: identity.email },
+    select: userSelect,
+  });
+  if (dbUser) request.user = dbUser;
+}
 
-  const token = authHeader.replace("Bearer ", "");
-
-  try {
-    const { data, error } = await supabase.auth.getUser(token);
-
-    if (error || !data.user || !data.user.email) {
-      return; // Token inválido, continua sem user
+/** Exige um dos papéis informados (use depois de authMiddleware). */
+export function requireRole(...roles: AuthenticatedUser["role"][]) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!request.user || !roles.includes(request.user.role)) {
+      return reply.status(403).send({ error: "Permissão insuficiente" });
     }
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email: data.user.email },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        operationId: true,
-      },
-    });
-
-    if (dbUser) {
-      request.user = dbUser;
-    }
-  } catch {
-    // Ignora erros no middleware opcional
-  }
+  };
 }

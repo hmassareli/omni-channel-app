@@ -298,6 +298,13 @@ export async function configureWebhooks(
         {
           url: webhookUrl,
           events,
+          ...(process.env.WEBHOOK_SECRET
+            ? {
+                customHeaders: [
+                  { name: "x-webhook-secret", value: process.env.WEBHOOK_SECRET },
+                ],
+              }
+            : {}),
         },
       ],
     },

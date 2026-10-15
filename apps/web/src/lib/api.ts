@@ -123,17 +123,11 @@ async function apiRequest<T>(
  * Cria um usuário no banco após signup no Supabase
  * IMPORTANTE: Chamar logo após o usuário fazer signup
  */
-export async function signupUser(
-  email: string,
-  name: string,
-): Promise<AuthUser> {
+export async function signupUser(name: string): Promise<AuthUser> {
   const response = await apiRequest<{ user: AuthUser }>(
     "POST",
     "/auth/signup",
-    {
-      email,
-      name,
-    },
+    { name },
   );
   return response.user;
 }

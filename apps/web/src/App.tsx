@@ -196,7 +196,7 @@ function Dashboard() {
           user?.user_metadata?.name ||
           user.email.split("@")[0];
 
-        await api.signupUser(user.email, userName);
+        await api.signupUser(userName);
 
         // 2. Verifica se tem operation
         const operation = await api.getUserOperation();

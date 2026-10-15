@@ -1,28 +1,17 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../prisma";
-import { optionalAuthMiddleware } from "../../middleware/auth";
+import { config } from "../../config";
+import {
+  identityMiddleware,
+  optionalAuthMiddleware,
+} from "../../middleware/auth";
 
 // ============================================================================
 // Schemas
 // ============================================================================
 
-// Lista de domínios de email descartáveis comuns
-const DISPOSABLE_EMAIL_DOMAINS = [
-  'tempmail.com', 'guerrillamail.com', '10minutemail.com', 'throwaway.email',
-  'mailinator.com', 'sharklasers.com', 'guerrillamail.info', 'yopmail.com'
-];
-
 const signupSchema = z.object({
-  email: z.string()
-    .email("Email inválido")
-    .refine(
-      (email) => {
-        const domain = email.split('@')[1]?.toLowerCase();
-        return domain && !DISPOSABLE_EMAIL_DOMAINS.includes(domain);
-      },
-      { message: "Email descartável não permitido" }
-    ),
   name: z.string().min(1, "Nome é obrigatório"),
 });
 
@@ -33,15 +22,23 @@ const signupSchema = z.object({
 export async function authRoutes(app: FastifyInstance) {
   /**
    * POST /auth/signup
-   * Cria um usuário no banco (chamado após signup no Supabase)
-   * Rota PÚBLICA - não requer autenticação
+   * Cria o usuário no banco após o login no Supabase.
+   * O e-mail vem do token validado (nunca do body), então ninguém cadastra
+   * um e-mail que não controla.
    */
-  app.post("/signup", async (request, reply) => {
+  app.post("/signup", { preHandler: identityMiddleware }, async (request, reply) => {
     const body = signupSchema.parse(request.body);
+    const email = request.identityEmail!;
+
+    const allowedDomains = config.signupAllowedDomains;
+    const domain = email.split("@")[1]?.toLowerCase();
+    if (allowedDomains.length > 0 && !allowedDomains.includes(domain ?? "")) {
+      return reply.status(403).send({ error: "Domínio de e-mail não autorizado" });
+    }
 
     // Verifica se já existe
     const existing = await prisma.user.findUnique({
-      where: { email: body.email },
+      where: { email },
     });
 
     if (existing) {
@@ -60,7 +57,7 @@ export async function authRoutes(app: FastifyInstance) {
     // Cria o usuário
     const user = await prisma.user.create({
       data: {
-        email: body.email,
+        email,
         name: body.name,
         role: "ADMIN", // Primeiro usuário é sempre ADMIN
       },

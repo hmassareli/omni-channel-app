@@ -1,6 +1,5 @@
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import dotenv from "dotenv";
 import fastify from "fastify";
 import {
   serializerCompiler,
@@ -8,6 +7,8 @@ import {
   ZodTypeProvider,
 } from "fastify-type-provider-zod";
 import { ZodError } from "zod";
+import { config } from "./config";
+import { TokenVerifier, setTokenVerifier } from "./middleware/auth";
 import { prisma } from "./prisma";
 
 // Routes
@@ -24,14 +25,19 @@ import { tagsRoutes } from "./routes/tags";
 import { usersRoutes } from "./routes/users";
 import { registerWhatsappWebhookRoutes } from "./routes/webhooks/whatsapp";
 
-dotenv.config();
-
 /**
  * Cria e configura a instância do Fastify.
  * Exportado para ser usado nos testes.
  */
-export async function buildApp() {
-  const app = fastify().withTypeProvider<ZodTypeProvider>();
+export interface BuildAppOptions {
+  /** Substitui a validação de token (testes). */
+  tokenVerifier?: TokenVerifier;
+}
+
+export async function buildApp(options: BuildAppOptions = {}) {
+  if (options.tokenVerifier) setTokenVerifier(options.tokenVerifier);
+
+  const app = fastify({ logger: process.env.NODE_ENV !== "test" }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -49,8 +55,9 @@ export async function buildApp() {
   });
 
   await app.register(cors, {
-    origin: "*", // Em produção, mude para a URL do seu frontend
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    // CORS_ORIGINS="https://app.exemplo.com,http://localhost:5173"
+    origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     maxAge: 86400,
   });
@@ -71,9 +78,7 @@ export async function buildApp() {
     await instance.prisma.$disconnect();
   });
 
-  app.get("/", async () => {
-    return { message: "Hello from Omni API" };
-  });
+  app.get("/health", async () => ({ status: "ok" }));
 
   // Rotas de webhook (WAHA, etc)
   await app.register(registerWhatsappWebhookRoutes, { prefix: "/webhooks" });

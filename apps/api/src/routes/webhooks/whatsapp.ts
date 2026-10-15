@@ -1,6 +1,7 @@
 import { ChannelStatus } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { webhookAuthMiddleware } from "../../middleware/webhook-auth";
 import { prisma } from "../../prisma";
 import {
   ingestWhatsappMessage,
@@ -56,7 +57,10 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
    * POST /webhooks/whatsapp
    * Webhook principal - recebe mensagens e eventos do WAHA
    */
-  app.post("/whatsapp", async (request, reply) => {
+  app.post(
+    "/whatsapp",
+    { preHandler: webhookAuthMiddleware },
+    async (request, reply) => {
     const body = request.body as Record<string, unknown>;
 
     logWebhookRouteDebug("received", {
@@ -146,7 +150,8 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
       conversationId: successResult.conversationId,
       messageId: successResult.messageId,
     });
-  });
+    },
+  );
 }
 
 // ============================================================================
