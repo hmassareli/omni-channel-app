@@ -8,3 +8,6 @@ coverage
 .env.test.local
 .env.production.local
 .env.server
+# Segredos de deploy e config local do Claude Code
+.env.deploy
+.claude/settings.local.json
