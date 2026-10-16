@@ -1,7 +1,6 @@
 import { lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
-import { AuthCallback } from "./features/auth/pages/AuthCallback";
 import { RequireAuth, RequireOnboarding } from "./features/auth/guards";
 const CompaniesPage = lazy(() =>
   import("./features/companies/pages/CompaniesPage").then((m) => ({ default: m.CompaniesPage })),
@@ -19,6 +18,7 @@ const OpportunityPage = lazy(() =>
 const InboxPage = lazy(() => import("./features/inbox/pages/InboxPage"));
 const DashboardPage = lazy(() => import("./features/dashboard/pages/DashboardPage"));
 const QueuesPage = lazy(() => import("./features/queues/pages/QueuesPage"));
+const TeamPage = lazy(() => import("./features/team/pages/TeamPage"));
 const ContactPage = lazy(() => import("./features/contacts/pages/ContactPage"));
 
 /** Rota inicial. */
@@ -27,8 +27,6 @@ const HOME_PATH = "/inbox";
 export default function App() {
   return (
     <Routes>
-      <Route path="/auth/callback" element={<AuthCallback />} />
-
       <Route element={<RequireAuth />}>
         <Route path="/onboarding" element={<OnboardingRoute />} />
 
@@ -43,6 +41,7 @@ export default function App() {
             <Route path="/opportunities/:id" element={<OpportunityPage />} />
             <Route path="/contacts/:id" element={<ContactPage />} />
             <Route path="/settings/queues" element={<QueuesPage />} />
+            <Route path="/settings/team" element={<TeamPage />} />
             <Route path="*" element={<Navigate to={HOME_PATH} replace />} />
           </Route>
         </Route>

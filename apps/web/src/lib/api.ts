@@ -53,7 +53,7 @@ import type {
   QueueResponse,
   GetCompanyResponse,
 } from "@omni/api/api-types";
-import { supabase } from "./supabase";
+import { API_BASE_URL, getAccessToken, logout, refreshSession } from "./auth";
 
 // Re-export types para facilitar uso nos componentes
 export type {
@@ -91,7 +91,7 @@ export type OpportunityTimelineResponse = GetOpportunityTimelineResponse;
 export type OpportunityTimelineEvent =
   GetOpportunityTimelineResponse["events"][number];
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3333";
+export { API_BASE_URL };
 
 interface ApiError {
   error: string;
@@ -103,28 +103,24 @@ export async function apiRequest<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
+  const send = (token: string | null) =>
+    fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
 
-  const headers: Record<string, string> = {};
+  let response = await send(await getAccessToken());
 
-  // Adiciona token de autenticação do Supabase
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    headers["Authorization"] = `Bearer ${session.access_token}`;
+  // Token expirado/revogado: renova uma vez e repete; sem sessão válida, sai.
+  if (response.status === 401) {
+    const renewed = await refreshSession();
+    if (renewed) response = await send(renewed);
+    if (response.status === 401) await logout();
   }
-
-  // Só adiciona Content-Type se tiver body
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-  }
-
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
 
   if (response.status === 204) return undefined as T;
   const data = await response.json().catch(() => ({}));
@@ -140,19 +136,6 @@ export async function apiRequest<T>(
 // ============================================================================
 // Auth
 // ============================================================================
-
-/**
- * Cria um usuário no banco após signup no Supabase
- * IMPORTANTE: Chamar logo após o usuário fazer signup
- */
-export async function signupUser(name: string): Promise<AuthUser> {
-  const response = await apiRequest<{ user: AuthUser }>(
-    "POST",
-    "/auth/signup",
-    { name },
-  );
-  return response.user;
-}
 
 /**
  * Retorna informações do usuário autenticado
@@ -783,4 +766,46 @@ export async function setQueueMembers(id: string, agentIds: string[]): Promise<D
 export async function getDeskMetrics(from: string, to: string): Promise<DeskMetricsResponse> {
   const sp = new URLSearchParams({ from, to });
   return apiRequest<DeskMetricsResponse>("GET", `/metrics/desk?${sp}`);
+}
+
+// ============================================================================
+// Equipe (usuários e acesso)
+// ============================================================================
+
+export interface TeamUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "ADMIN" | "MANAGER" | "AGENT";
+  mustChangePassword: boolean;
+  createdAt: string;
+  agent: { id: string; name: string } | null;
+}
+
+export async function getTeamUsers(): Promise<TeamUser[]> {
+  const r = await apiRequest<{ users: TeamUser[] }>("GET", "/users");
+  return r.users;
+}
+
+/** Convida um usuário; devolve a senha provisória (mostrada uma única vez). */
+export async function inviteUser(data: {
+  name: string;
+  email: string;
+  role: TeamUser["role"];
+  agentId?: string;
+}): Promise<{ user: TeamUser; temporaryPassword: string }> {
+  return apiRequest("POST", "/users", data);
+}
+
+export async function resetUserPassword(id: string): Promise<{ temporaryPassword: string }> {
+  return apiRequest("POST", `/users/${id}/reset-password`);
+}
+
+export async function removeUser(id: string): Promise<void> {
+  await apiRequest("DELETE", `/users/${id}`);
+}
+
+/** Vincula um atendente existente a um usuário (para assumir conversas). */
+export async function linkAgentToUser(agentId: string, userId: string): Promise<void> {
+  await apiRequest("PUT", `/agents/${agentId}`, { userId });
 }

@@ -79,7 +79,8 @@ export function Composer({
         ))}
       </div>
       <div className="flex items-end gap-2">
-        <Textarea
+        <div className="min-w-0 flex-1">
+          <Textarea
           ref={ref}
           aria-label={mode === "reply" ? "Mensagem" : "Nota interna"}
           rows={1}
@@ -93,7 +94,8 @@ export function Composer({
               : "Nota visível apenas para a equipe"
           }
           className="max-h-48 min-h-9"
-        />
+          />
+        </div>
         <Button
           icon={mode === "reply" ? <Send /> : <StickyNote />}
           loading={mutation.isPending}

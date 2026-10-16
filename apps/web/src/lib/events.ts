@@ -1,7 +1,7 @@
 // Cliente SSE (fetch + ReadableStream) com header Authorization e reconexão.
 // EventSource nativo não permite enviar headers, por isso o parser é manual.
 import { API_BASE_URL } from "./api";
-import { supabase } from "./supabase";
+import { getAccessToken } from "./auth";
 
 export interface SseMessage {
   event: string;
@@ -57,15 +57,11 @@ export function subscribeToEvents(
   const run = async () => {
     while (!controller.signal.aborted) {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        const token = await getAccessToken();
         const response = await fetch(`${API_BASE_URL}/events`, {
           headers: {
             Accept: "text/event-stream",
-            ...(session?.access_token
-              ? { Authorization: `Bearer ${session.access_token}` }
-              : {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           signal: controller.signal,
         });

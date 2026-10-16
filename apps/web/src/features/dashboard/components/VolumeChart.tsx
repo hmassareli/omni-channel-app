@@ -7,12 +7,12 @@ const W = 800;
 const H = 240;
 const PAD = { top: 12, right: 8, bottom: 28, left: 36 };
 
-function niceMax(v: number): number {
-  if (v <= 4) return 4;
-  const pow = 10 ** Math.floor(Math.log10(v));
-  const n = v / pow;
-  const step = n <= 2 ? 2 : n <= 5 ? 5 : 10;
-  return step * pow;
+/** Passo "redondo" (1, 2, 5, 10, 20, ...) para 4 divisões que cubram o valor. */
+function niceStep(maxValue: number): number {
+  const raw = Math.max(1, maxValue / 4);
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const n = raw / pow;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;
 }
 
 function dayLabel(date: string): string {
@@ -23,14 +23,15 @@ function dayLabel(date: string): string {
 /** Volume diário: barras agrupadas, entrada (cor de destaque) x saída (neutro). */
 export function VolumeChart({ data }: { data: Day[] }) {
   const [hover, setHover] = useState<number | null>(null);
-  const max = niceMax(Math.max(1, ...data.flatMap((d) => [d.inbound, d.outbound])));
+  const step = niceStep(Math.max(1, ...data.flatMap((d) => [d.inbound, d.outbound])));
+  const max = step * 4;
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
   const band = plotW / Math.max(1, data.length);
   const barW = Math.max(2, Math.min(14, band / 2 - 2));
   const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
   const labelEvery = Math.ceil(data.length / 8);
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => Math.round(max * t));
+  const ticks = [0, 1, 2, 3, 4].map((i) => i * step);
   const active = hover !== null ? data[hover] : null;
 
   return (

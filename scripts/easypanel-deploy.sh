@@ -14,7 +14,8 @@ cd "$(dirname "$0")/.."
 BRANCH="${BRANCH:-refactor/helpdesk-core}"
 WEB_URL="${WEB_URL:-https://crm-crm-web.lnyx9r.easypanel.host}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-$(openssl rand -hex 24)}"
-# ONLY=crm-web (ou crm-api) dispara só o deploy desse serviço, sem mexer em variáveis/branch
+# ONLY=deploy publica os dois serviços sem mexer em variáveis/branch;
+# ONLY=crm-web (ou crm-api) publica só esse serviço
 ONLY="${ONLY:-all}"
 
 # No WSL, o alias "contabo" fica no config do Windows:
@@ -66,7 +67,7 @@ if only == "all":
 
 # 3. deploy (api primeiro). A chamada fica aberta durante o build: timeout é esperado.
 for svc in (api, web):
-    if only not in ("all", svc["serviceName"]):
+    if only not in ("all", "deploy", svc["serviceName"]):
         continue
     try:
         post("services.app.deployService", svc)

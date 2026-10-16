@@ -15,6 +15,8 @@ const createUserSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
   role: z.enum(UserRole).default(UserRole.AGENT),
   operationId: z.string().optional(),
+  /** Atendente existente (sem usuário) a vincular; sem ele, cria um novo. */
+  agentId: z.uuid().optional(),
 });
 
 const updateUserSchema = z.object({
@@ -122,7 +124,17 @@ export async function usersRoutes(app: FastifyInstance) {
       return reply.status(409).send({ error: "Email já cadastrado" });
     }
 
-    // Convite: senha provisória mostrada uma única vez; troca obrigatória no 1º acesso
+    if (body.agentId) {
+      const agent = await prisma.agent.findFirst({
+        where: { id: body.agentId, operationId: requester.operationId, userId: null },
+      });
+      if (!agent) {
+        return reply.status(404).send({ error: "Atendente não encontrado ou já vinculado" });
+      }
+    }
+
+    // Convite: senha provisória mostrada uma única vez; troca obrigatória no 1º acesso.
+    // Todo usuário vira também atendente (pode assumir conversas no inbox).
     const temporaryPassword = generateTemporaryPassword();
     const user = await prisma.user.create({
       data: {
@@ -132,9 +144,13 @@ export async function usersRoutes(app: FastifyInstance) {
         operationId: requester.operationId,
         passwordHash: await hashPassword(temporaryPassword),
         mustChangePassword: true,
+        agent: body.agentId
+          ? { connect: { id: body.agentId } }
+          : { create: { name: body.name, operationId: requester.operationId } },
       },
       include: {
         operation: { select: { id: true, name: true } },
+        agent: { select: { id: true, name: true } },
       },
     });
 

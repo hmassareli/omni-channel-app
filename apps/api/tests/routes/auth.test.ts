@@ -189,6 +189,7 @@ describe("Auth Routes", () => {
       const { user, temporaryPassword } = created.json();
       expect(user.email).toBe("nova@empresa.com");
       expect(user.passwordHash).toBeUndefined();
+      expect(user.agent).toMatchObject({ name: "Nova" }); // já pode atender
 
       const first = await login("nova@empresa.com", temporaryPassword);
       expect(first.statusCode).toBe(200);

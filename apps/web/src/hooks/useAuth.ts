@@ -1,174 +1,65 @@
-import { useEffect, useState, useCallback } from "react";
-import type { User, Session, AuthError, AuthChangeEvent } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { useCallback, useEffect, useState } from "react";
+import type { AuthUser } from "@omni/api/api-types";
+import * as auth from "../lib/auth";
+import { getCurrentUser } from "../lib/api";
 
 interface AuthState {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
   loading: boolean;
-  error: AuthError | null;
+  error: Error | null;
 }
 
 export function useAuth() {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    session: null,
-    loading: true,
+  const [state, setState] = useState<AuthState>(() => ({
+    user: auth.getStoredUser(),
+    loading: auth.getStoredUser() !== null, // confirma a sessão salva na API
     error: null,
-  });
+  }));
 
   useEffect(() => {
-    // Busca a sessão atual ao carregar
-    const getInitialSession = async () => {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-
-        if (error) {
-          setAuthState((prev) => ({ ...prev, error, loading: false }));
-          return;
-        }
-
-        setAuthState({
-          user: session?.user ?? null,
-          session: session,
-          loading: false,
-          error: null,
-        });
-      } catch {
-        setAuthState((prev) => ({ ...prev, loading: false }));
-      }
-    };
-
-    getInitialSession();
-
-    // Escuta mudanças na autenticação
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event: AuthChangeEvent, session: Session | null) => {
-      setAuthState({
-        user: session?.user ?? null,
-        session: session,
-        loading: false,
-        error: null,
-      });
-      }
+    const unsubscribe = auth.onAuthChange((user) =>
+      setState((prev) => ({ ...prev, user, loading: false })),
     );
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    // Revalida a sessão salva (pega papel/operação atualizados ou detecta expiração)
+    if (auth.getStoredUser()) {
+      getCurrentUser()
+        .then((user) => auth.updateStoredUser(user))
+        .catch(() => setState((prev) => ({ ...prev, loading: false })));
+    }
+
+    return unsubscribe;
   }, []);
 
-  const signInWithGoogle = useCallback(async () => {
-    setAuthState((prev) => ({ ...prev, loading: true, error: null }));
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo:
-          import.meta.env.VITE_REDIRECT_AUTH_URL ||
-          `${window.location.origin}/auth/callback`,
-      },
-    });
-
-    if (error) {
-      setAuthState((prev) => ({ ...prev, error, loading: false }));
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      await auth.login(email, password);
+      return { success: true as const, error: null };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error("Não foi possível entrar");
+      setState((prev) => ({ ...prev, loading: false, error: err }));
+      return { success: false as const, error: err };
     }
   }, []);
-
-  const signInWithEmail = useCallback(
-    async (email: string, password: string) => {
-      setAuthState((prev) => ({ ...prev, loading: true, error: null }));
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        setAuthState((prev) => ({ ...prev, error, loading: false }));
-        return { success: false, error };
-      }
-
-      setAuthState({
-        user: data.user,
-        session: data.session,
-        loading: false,
-        error: null,
-      });
-
-      return { success: true, error: null };
-    },
-    []
-  );
-
-  const signUpWithEmail = useCallback(
-    async (email: string, password: string, fullName?: string) => {
-      setAuthState((prev) => ({ ...prev, loading: true, error: null }));
-
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-          },
-        },
-      });
-
-      if (error) {
-        setAuthState((prev) => ({ ...prev, error, loading: false }));
-        return { success: false, error };
-      }
-
-      // Após signup, o usuário pode precisar confirmar o email
-      setAuthState((prev) => ({ ...prev, loading: false }));
-
-      return { success: true, user: data.user, error: null };
-    },
-    []
-  );
 
   const signOut = useCallback(async () => {
-    setAuthState((prev) => ({ ...prev, loading: true }));
-
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      setAuthState((prev) => ({ ...prev, error, loading: false }));
-      return;
-    }
-
-    setAuthState({
-      user: null,
-      session: null,
-      loading: false,
-      error: null,
-    });
+    await auth.logout();
   }, []);
 
-  const resetPassword = useCallback(async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    });
-
-    return { success: !error, error };
+  /** Troca a senha e atualiza o usuário (libera o app após senha provisória). */
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    await auth.changePassword(currentPassword, newPassword);
+    auth.updateStoredUser(await getCurrentUser());
   }, []);
 
   return {
-    user: authState.user,
-    session: authState.session,
-    loading: authState.loading,
-    error: authState.error,
-    isAuthenticated: !!authState.user,
-    signInWithGoogle,
+    user: state.user,
+    loading: state.loading,
+    error: state.error,
+    isAuthenticated: !!state.user,
     signInWithEmail,
-    signUpWithEmail,
     signOut,
-    resetPassword,
+    changePassword,
   };
 }

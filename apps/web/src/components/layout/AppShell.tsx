@@ -5,6 +5,7 @@ import {
   Layers,
   MessageSquare,
   Target,
+  UserCog,
   type LucideIcon,
 } from "lucide-react";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -20,6 +21,7 @@ const NAV_ITEMS: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/companies", label: "Empresas", icon: Building2 },
   { to: "/opportunities", label: "Oportunidades", icon: Target },
   { to: "/settings/queues", label: "Filas", icon: Layers },
+  { to: "/settings/team", label: "Equipe", icon: UserCog },
 ];
 
 function SideNav() {
@@ -61,9 +63,7 @@ function UserMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const name =
-    (user?.user_metadata?.full_name as string | undefined) ||
-    (user?.user_metadata?.name as string | undefined);
+  const name = user?.name;
   const label = name || user?.email || "Usuário";
 
   useEffect(() => {
