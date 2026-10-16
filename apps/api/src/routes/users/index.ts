@@ -1,6 +1,8 @@
 import { UserRole } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { generateTemporaryPassword, hashPassword } from "../../auth/password";
+import { revokeAllSessions } from "../../auth/sessions";
 import { authMiddleware, requireRole } from "../../middleware/auth";
 import { prisma } from "../../prisma";
 
@@ -9,14 +11,14 @@ import { prisma } from "../../prisma";
 // ============================================================================
 
 const createUserSchema = z.object({
-  email: z.email("Email inválido"),
+  email: z.email("Email inválido").transform((e) => e.trim().toLowerCase()),
   name: z.string().min(1, "Nome é obrigatório"),
   role: z.enum(UserRole).default(UserRole.AGENT),
   operationId: z.string().optional(),
 });
 
 const updateUserSchema = z.object({
-  email: z.email("Email inválido").optional(),
+  email: z.email("Email inválido").transform((e) => e.trim().toLowerCase()).optional(),
   name: z.string().min(1).optional(),
   role: z.enum(UserRole).optional(),
   operationId: z.string().nullable().optional(),
@@ -108,6 +110,10 @@ export async function usersRoutes(app: FastifyInstance) {
         .send({ error: "Usuário sem operação vinculada" });
     }
 
+    if (body.role === UserRole.ADMIN && requester.role !== UserRole.ADMIN) {
+      return reply.status(403).send({ error: "Só um ADMIN pode criar outro ADMIN" });
+    }
+
     // Verifica se email já existe
     const existingEmail = await prisma.user.findUnique({
       where: { email: body.email },
@@ -116,19 +122,23 @@ export async function usersRoutes(app: FastifyInstance) {
       return reply.status(409).send({ error: "Email já cadastrado" });
     }
 
+    // Convite: senha provisória mostrada uma única vez; troca obrigatória no 1º acesso
+    const temporaryPassword = generateTemporaryPassword();
     const user = await prisma.user.create({
       data: {
         email: body.email,
         name: body.name,
         role: body.role,
         operationId: requester.operationId,
+        passwordHash: await hashPassword(temporaryPassword),
+        mustChangePassword: true,
       },
       include: {
         operation: { select: { id: true, name: true } },
       },
     });
 
-    return reply.status(201).send({ user });
+    return reply.status(201).send({ user, temporaryPassword });
   });
 
   /**
@@ -145,6 +155,11 @@ export async function usersRoutes(app: FastifyInstance) {
     });
     if (!existing) {
       return reply.status(404).send({ error: "Usuário não encontrado" });
+    }
+
+    const touchesAdmin = body.role === UserRole.ADMIN || existing.role === UserRole.ADMIN;
+    if (touchesAdmin && requester.role !== UserRole.ADMIN) {
+      return reply.status(403).send({ error: "Só um ADMIN pode alterar um ADMIN" });
     }
 
     // Verifica se email já existe (se estiver alterando)
@@ -169,6 +184,38 @@ export async function usersRoutes(app: FastifyInstance) {
     });
 
     return reply.send({ user });
+  });
+
+  /**
+   * POST /users/:id/reset-password
+   * Gera uma nova senha provisória e encerra as sessões do usuário
+   */
+  app.post("/:id/reset-password", { preHandler: manage }, async (request, reply) => {
+    const requester = request.user!;
+    const { id } = userParamsSchema.parse(request.params);
+
+    const existing = await prisma.user.findFirst({
+      where: { id, operationId: requester.operationId },
+    });
+    if (!existing) {
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+    }
+    if (existing.role === UserRole.ADMIN && requester.role !== UserRole.ADMIN) {
+      return reply.status(403).send({ error: "Só um ADMIN pode redefinir a senha de um ADMIN" });
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    await prisma.user.update({
+      where: { id },
+      data: {
+        passwordHash: await hashPassword(temporaryPassword),
+        mustChangePassword: true,
+        passwordChangedAt: new Date(),
+      },
+    });
+    await revokeAllSessions(id);
+
+    return reply.send({ temporaryPassword });
   });
 
   /**

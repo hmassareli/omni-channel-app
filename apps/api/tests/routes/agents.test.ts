@@ -28,9 +28,9 @@ describe("Agents Routes", () => {
       expect((await http.del(`/agents/${NIL_UUID}`)).statusCode).toBe(401);
     });
 
-    it("rejeita usuário não cadastrado com 403", async () => {
+    it("rejeita usuário não cadastrado com 401", async () => {
       const res = await http.get("/agents", { authorization: "Bearer ninguem@test.com" });
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(401);
     });
   });
 

@@ -36,10 +36,22 @@ export type AuthUser = {
   name: string;
   role: "ADMIN" | "MANAGER" | "AGENT";
   operationId: string | null;
+  mustChangePassword: boolean;
 };
 
-export interface SignupResponse {
+export interface AuthTokens {
+  accessToken: string;
+  /** Validade do access token, em segundos. */
+  expiresIn: number;
+  refreshToken: string;
+}
+
+export interface LoginResponse extends AuthTokens {
   user: AuthUser;
+}
+
+export interface ResetPasswordResponse {
+  temporaryPassword: string;
 }
 
 export interface GetMeResponse {
@@ -595,9 +607,14 @@ export interface GetUserResponse {
 }
 
 export interface CreateUserResponse {
-  user: Prisma.UserGetPayload<{
-    include: { operation: { select: { id: true; name: true } } };
-  }>;
+  user: Omit<
+    Prisma.UserGetPayload<{
+      include: { operation: { select: { id: true; name: true } } };
+    }>,
+    "passwordHash"
+  >;
+  /** Mostrada uma única vez; troca obrigatória no primeiro acesso. */
+  temporaryPassword: string;
 }
 
 // ============================================================================

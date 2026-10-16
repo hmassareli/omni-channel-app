@@ -64,6 +64,7 @@ async function cleanDatabase() {
     "whatsAppChannel",
     "channel",
     "agent",
+    "authSession",
     "user",
     "operation",
   ] as const;

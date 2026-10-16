@@ -50,15 +50,22 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.setSerializerCompiler(serializerCompiler);
 
   // Error handler global para erros de validação Zod
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: "Erro de validação",
         details: error.issues,
       });
     }
-    // Re-throw para o handler padrão
-    reply.send(error);
+    // Erros com status explícito (rate limit, validação do Fastify, 4xx de plugins)
+    const statusCode = (error as { statusCode?: number }).statusCode;
+    if (typeof statusCode === "number" && statusCode >= 400 && statusCode < 500) {
+      const message = (error as { error?: string; message?: string }).error ?? (error as Error).message;
+      return reply.status(statusCode).send({ error: message, statusCode });
+    }
+
+    request.log.error(error);
+    return reply.status(500).send({ error: "Erro interno do servidor" });
   });
 
   await app.register(cors, {

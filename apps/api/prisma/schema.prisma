@@ -316,10 +316,42 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Autenticação própria (e-mail + senha)
+  passwordHash       String? // null = ainda sem senha (não consegue entrar)
+  mustChangePassword Boolean   @default(false) // senha provisória
+  passwordChangedAt  DateTime?
+
   operation Operation? @relation(fields: [operationId], references: [id], onDelete: SetNull)
   agent     Agent? // Se role=AGENT, terá um Agent vinculado
+  sessions  AuthSession[]
 
   @@map("omni_users")
+}
+
+// Sessão de login: guarda só o hash do refresh token (revogável, com rotação)
+model AuthSession {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("omni_auth_sessions")
+}
+
+// Configurações internas geradas pelo sistema (ex.: segredo do JWT)
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("omni_app_settings")
 }
 
 // Atendente (quem atende no WhatsApp)

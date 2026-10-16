@@ -25,18 +25,4 @@ export const config = {
   get webhookSecret(): string | undefined {
     return process.env.WEBHOOK_SECRET?.trim() || undefined;
   },
-  get supabaseUrl(): string | undefined {
-    return process.env.SUPABASE_URL?.trim() || undefined;
-  },
-  get supabaseAnonKey(): string | undefined {
-    return process.env.SUPABASE_ANON_KEY?.trim() || undefined;
-  },
-  /** Segredo HS256 legado do Supabase. Sem ele, usa o JWKS do projeto. */
-  get supabaseJwtSecret(): string | undefined {
-    return process.env.SUPABASE_JWT_SECRET?.trim() || undefined;
-  },
-  /** Domínios autorizados a se auto-cadastrar. Vazio = qualquer domínio. */
-  get signupAllowedDomains(): string[] {
-    return list(process.env.SIGNUP_ALLOWED_DOMAINS).map((d) => d.toLowerCase());
-  },
 };
