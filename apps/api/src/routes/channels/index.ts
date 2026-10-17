@@ -1,7 +1,7 @@
 import { ChannelStatus, ChannelType } from "@prisma/client";
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { authMiddleware } from "../../middleware/auth";
+import { authMiddleware, requireRole, type AuthenticatedUser } from "../../middleware/auth";
 import { prisma } from "../../prisma";
 import * as waha from "../../channels/whatsapp-waha/waha";
 import {
@@ -9,13 +9,22 @@ import {
   resolveWhatsappWebhookUrl,
 } from "../../channels/whatsapp-waha/webhook-config";
 import { syncWhatsAppChats } from "../../channels/whatsapp-waha/sync";
+import {
+  checkWhatsappChannelHealth,
+  emitChannelUpdated,
+  lastInboundAtByChannel,
+  mapWahaStatusToChannelStatus,
+  persistChannelStatus,
+  type WhatsappChannelRecord,
+} from "../../channels/whatsapp-waha/health";
+import type { ChannelHealthResponse } from "../../api-types";
 
 // ============================================================================
 // Schemas de validação
 // ============================================================================
 
 const createChannelSchema = z.object({
-  name: z.string().min(1, "Nome é obrigatório"),
+  name: z.string().trim().min(1, "Nome é obrigatório"),
   operationId: z.uuid("operationId inválido"),
   agentId: z.uuid("agentId inválido").optional(),
   webhookUrl: z.string().url("webhookUrl inválida").optional(),
@@ -24,6 +33,38 @@ const createChannelSchema = z.object({
 const channelParamsSchema = z.object({
   id: z.uuid("ID inválido"),
 });
+
+/** Conectar/reconectar/remover canais: só ADMIN e MANAGER. AGENT só consulta. */
+const manage = [authMiddleware, requireRole("ADMIN", "MANAGER")];
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/** Carrega o canal da operação do usuário; responde 404/403 e devolve null se não puder. */
+async function findOwnedChannel(id: string, user: AuthenticatedUser, reply: FastifyReply) {
+  const channel = await prisma.channel.findUnique({
+    where: { id },
+    include: { whatsappDetails: true },
+  });
+  if (!channel) {
+    reply.status(404).send({ error: "Canal não encontrado" });
+    return null;
+  }
+  if (channel.operationId !== user.operationId) {
+    reply.status(403).send({ error: "Acesso negado" });
+    return null;
+  }
+  return channel;
+}
+
+function asWhatsappChannel(
+  channel: NonNullable<Awaited<ReturnType<typeof findOwnedChannel>>>,
+): WhatsappChannelRecord | null {
+  return channel.type === ChannelType.WHATSAPP && channel.whatsappDetails
+    ? (channel as WhatsappChannelRecord)
+    : null;
+}
 
 // ============================================================================
 // Routes
@@ -34,164 +75,137 @@ export async function channelsRoutes(app: FastifyInstance) {
    * POST /channels/whatsapp
    * Cria um novo canal WhatsApp e inicia sessão no WAHA
    */
-  app.post(
-    "/whatsapp",
-    { preHandler: authMiddleware },
-    async (request, reply) => {
-      const user = request.user!;
-      const body = createChannelSchema.parse(request.body);
+  app.post("/whatsapp", { preHandler: manage }, async (request, reply) => {
+    const user = request.user!;
+    const body = createChannelSchema.parse(request.body);
 
-      // Valida que está criando na sua própria operation
-      if (!user.operationId) {
-        return reply
-          .status(403)
-          .send({ error: "Usuário sem operation vinculada" });
-      }
+    // Valida que está criando na sua própria operation
+    if (!user.operationId) {
+      return reply.status(403).send({ error: "Usuário sem operation vinculada" });
+    }
 
-      if (body.operationId !== user.operationId) {
-        return reply.status(403).send({ error: "Acesso negado" });
-      }
+    if (body.operationId !== user.operationId) {
+      return reply.status(403).send({ error: "Acesso negado" });
+    }
 
-      // Verifica se a operation existe
-      const operation = await prisma.operation.findUnique({
-        where: { id: body.operationId },
+    // Verifica se a operation existe
+    const operation = await prisma.operation.findUnique({
+      where: { id: body.operationId },
+    });
+
+    if (!operation) {
+      return reply.status(404).send({ error: "Operation não encontrada" });
+    }
+
+    // Verifica se o agent existe na operação (se fornecido)
+    if (body.agentId) {
+      const agent = await prisma.agent.findUnique({
+        where: { id: body.agentId },
       });
-
-      if (!operation) {
-        return reply.status(404).send({ error: "Operation não encontrada" });
+      if (!agent || agent.operationId !== body.operationId) {
+        return reply.status(404).send({ error: "Agent não encontrado" });
       }
+    }
 
-      // Verifica se o agent existe (se fornecido)
-      if (body.agentId) {
-        const agent = await prisma.agent.findUnique({
-          where: { id: body.agentId },
-        });
-        if (!agent) {
-          return reply.status(404).send({ error: "Agent não encontrado" });
-        }
-      }
+    // Gera nome único para sessão WAHA
+    const sessionName = `channel-${Date.now()}`;
+    const webhookUrl = resolveWhatsappWebhookUrl(body.webhookUrl);
 
-      // Gera nome único para sessão WAHA
-      const sessionName = `channel-${Date.now()}`;
-      const webhookUrl = resolveWhatsappWebhookUrl(body.webhookUrl);
+    if (!webhookUrl) {
+      return reply.status(500).send({
+        error: "Webhook do WhatsApp não configurado. Defina APP_PUBLIC_URL no backend.",
+      });
+    }
 
-      if (!webhookUrl) {
-        return reply.status(500).send({
-          error:
-            "Webhook do WhatsApp não configurado. Defina APP_PUBLIC_URL no backend.",
-        });
-      }
-
-      // Cria o canal no banco
-      const channel = await prisma.channel.create({
-        data: {
-          name: body.name,
-          type: ChannelType.WHATSAPP,
-          status: ChannelStatus.PENDING,
-          operationId: body.operationId,
-          agentId: body.agentId,
-          whatsappDetails: {
-            create: {
-              sessionName,
-              webhookUrl,
-            },
+    // Cria o canal no banco
+    const channel = await prisma.channel.create({
+      data: {
+        name: body.name,
+        type: ChannelType.WHATSAPP,
+        status: ChannelStatus.PENDING,
+        operationId: body.operationId,
+        agentId: body.agentId,
+        whatsappDetails: {
+          create: {
+            sessionName,
+            webhookUrl,
           },
         },
-        include: {
-          whatsappDetails: true,
-        },
+      },
+      include: {
+        whatsappDetails: true,
+      },
+    });
+
+    try {
+      // Cria sessão no WAHA (webhook já com o x-webhook-secret)
+      const wahaSession = await waha.createSession({
+        name: sessionName,
+        start: true,
+        config: { webhooks: [waha.buildWebhookConfig(webhookUrl)] },
       });
 
-      try {
-        // Cria sessão no WAHA
-        const wahaSession = await waha.createSession({
-          name: sessionName,
-          start: true,
-          config: {
-            webhooks: [
-              {
-                url: webhookUrl,
-                events: ["message.any", "session.status"],
-              },
-            ],
-          },
-        });
+      // Atualiza status baseado na resposta do WAHA
+      const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
 
-        // Atualiza status baseado na resposta do WAHA
-        const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
+      await prisma.channel.update({
+        where: { id: channel.id },
+        data: { status: newStatus },
+      });
+      emitChannelUpdated(channel);
 
-        await prisma.channel.update({
-          where: { id: channel.id },
-          data: { status: newStatus },
-        });
+      return reply.status(201).send({
+        channel: {
+          ...channel,
+          status: newStatus,
+        },
+        wahaSession: {
+          name: wahaSession.name,
+          status: wahaSession.status,
+        },
+      });
+    } catch (error) {
+      // Se falhar no WAHA, marca como FAILED mas mantém o canal
+      await prisma.channel.update({
+        where: { id: channel.id },
+        data: { status: ChannelStatus.FAILED },
+      });
+      emitChannelUpdated(channel);
 
-        return reply.status(201).send({
-          channel: {
-            ...channel,
-            status: newStatus,
-          },
-          wahaSession: {
-            name: wahaSession.name,
-            status: wahaSession.status,
-          },
-        });
-      } catch (error) {
-        // Se falhar no WAHA, marca como FAILED mas mantém o canal
-        await prisma.channel.update({
-          where: { id: channel.id },
-          data: { status: ChannelStatus.FAILED },
-        });
+      console.error("[Channels] Erro ao criar sessão WAHA:", error);
 
-        console.error("[Channels] Erro ao criar sessão WAHA:", error);
-
-        return reply.status(500).send({
-          error: "Falha ao criar sessão no WAHA",
-          channel: {
-            ...channel,
-            status: ChannelStatus.FAILED,
-          },
-        });
-      }
-    },
-  );
+      return reply.status(500).send({
+        error: "Falha ao criar sessão no WAHA",
+        channel: {
+          ...channel,
+          status: ChannelStatus.FAILED,
+        },
+      });
+    }
+  });
 
   /**
    * GET /channels/:id/qr
    * Obtém o QR code para autenticação do WhatsApp
    */
-  app.get("/:id/qr", { preHandler: authMiddleware }, async (request, reply) => {
+  app.get("/:id/qr", { preHandler: manage }, async (request, reply) => {
     const user = request.user!;
     const { id } = channelParamsSchema.parse(request.params);
 
-    const channel = await prisma.channel.findUnique({
-      where: { id },
-      include: { whatsappDetails: true },
-    });
+    const found = await findOwnedChannel(id, user, reply);
+    if (!found) return reply;
 
-    if (!channel) {
-      return reply.status(404).send({ error: "Canal não encontrado" });
-    }
-
-    // Valida que o canal pertence à operation do usuário
-    if (channel.operationId !== user.operationId) {
-      return reply.status(403).send({ error: "Acesso negado" });
-    }
-
-    if (channel.type !== ChannelType.WHATSAPP) {
+    if (found.type !== ChannelType.WHATSAPP) {
       return reply.status(400).send({ error: "Canal não é do tipo WhatsApp" });
     }
 
-    if (!channel.whatsappDetails) {
-      return reply
-        .status(500)
-        .send({ error: "Detalhes do WhatsApp não encontrados" });
+    const channel = asWhatsappChannel(found);
+    if (!channel) {
+      return reply.status(500).send({ error: "Detalhes do WhatsApp não encontrados" });
     }
 
     try {
-      const qr = await waha.getQRCode(
-        channel.whatsappDetails.sessionName,
-        "image",
-      );
+      const qr = await waha.getQRCode(channel.whatsappDetails.sessionName, "image");
 
       return reply.send({
         channelId: channel.id,
@@ -199,16 +213,19 @@ export async function channelsRoutes(app: FastifyInstance) {
         qrValue: qr.value, // String para gerar QR se preferir
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Erro desconhecido";
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
 
       console.error("[Channels] Erro ao obter QR:", error);
 
+      if (waha.isWahaSessionNotFound(error)) {
+        return reply.status(409).send({
+          error: "A sessão não existe mais no WhatsApp. Reconecte o canal.",
+          code: "SESSION_NOT_FOUND",
+        });
+      }
+
       // Pode ser que a sessão já esteja autenticada
-      if (
-        errorMessage.includes("authenticated") ||
-        errorMessage.includes("WORKING")
-      ) {
+      if (errorMessage.includes("authenticated") || errorMessage.includes("WORKING")) {
         return reply.status(400).send({
           error: "Sessão já está autenticada",
           status: "WORKING",
@@ -223,213 +240,189 @@ export async function channelsRoutes(app: FastifyInstance) {
 
   /**
    * GET /channels/:id/status
-   * Verifica o status atual do canal/sessão
+   * Verifica o status atual do canal/sessão (formato legado, usado no onboarding).
    */
-  app.get(
-    "/:id/status",
-    { preHandler: authMiddleware },
-    async (request, reply) => {
-      const user = request.user!;
-      const { id } = channelParamsSchema.parse(request.params);
+  app.get("/:id/status", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
+    const { id } = channelParamsSchema.parse(request.params);
 
-      const channel = await prisma.channel.findUnique({
-        where: { id },
-        include: { whatsappDetails: true },
-      });
+    const found = await findOwnedChannel(id, user, reply);
+    if (!found) return reply;
 
-      if (!channel) {
-        return reply.status(404).send({ error: "Canal não encontrado" });
-      }
+    const channel = asWhatsappChannel(found);
+    if (!channel) {
+      return reply.send({ channelId: found.id, type: found.type, status: found.status });
+    }
 
-      // Valida que o canal pertence à operation do usuário
-      if (channel.operationId !== user.operationId) {
-        return reply.status(403).send({ error: "Acesso negado" });
-      }
+    const health = await checkWhatsappChannelHealth(channel);
+    return reply.send({
+      channelId: channel.id,
+      type: channel.type,
+      status: health.status,
+      ...(health.wahaStatus ? { wahaStatus: health.wahaStatus } : {}),
+      ...(health.me
+        ? { phoneNumber: health.me.phoneNumber, pushName: health.me.pushName ?? undefined }
+        : {}),
+      ...(health.error ? { error: health.error } : {}),
+    });
+  });
 
-      if (channel.type !== ChannelType.WHATSAPP || !channel.whatsappDetails) {
-        return reply.send({
-          channelId: channel.id,
-          type: channel.type,
-          status: channel.status,
-        });
-      }
+  /**
+   * GET /channels/:id/health
+   * Consulta o WAHA ao vivo: status, número conectado, webhook e última mensagem recebida.
+   * "Session not found" responde 200 com status desconectado.
+   */
+  app.get("/:id/health", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = request.user!;
+    const { id } = channelParamsSchema.parse(request.params);
 
-      try {
-        const wahaSession = await waha.getSession(
-          channel.whatsappDetails.sessionName,
-        );
-        const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
-        const phoneNumber = wahaSession.me?.id?.split("@")[0];
+    const found = await findOwnedChannel(id, user, reply);
+    if (!found) return reply;
 
-        // Atualiza o status no banco se mudou
-        if (channel.status !== newStatus || phoneNumber) {
-          try {
-            await prisma.channel.update({
-              where: { id: channel.id },
-              data: {
-                status: newStatus,
-                // Salva o número do WhatsApp quando conectar
-                externalIdentifier: phoneNumber || channel.externalIdentifier,
-              },
-            });
-          } catch (updateError) {
-            // Se falhar por constraint única, o mesmo número já está em outro channel
-            if (
-              updateError instanceof Error &&
-              updateError.message.includes("externalIdentifier")
-            ) {
-              console.warn(
-                `[Channels] Número ${phoneNumber} já está em uso por outro channel`,
-              );
-            } else {
-              throw updateError;
-            }
-          }
-        }
+    const lastInbound = (await lastInboundAtByChannel([found.id])).get(found.id) ?? null;
+    const checkedAt = new Date().toISOString();
 
-        if (wahaSession.status === "WORKING") {
-          const shouldSync = channel.status !== ChannelStatus.WORKING;
+    const channel = asWhatsappChannel(found);
+    if (!channel) {
+      const body: ChannelHealthResponse = {
+        channelId: found.id,
+        type: found.type,
+        status: found.status,
+        wahaStatus: null,
+        me: null,
+        lastInboundAt: lastInbound?.toISOString() ?? null,
+        checkedAt,
+      };
+      return reply.send(body);
+    }
 
-          await ensureWhatsappSessionWebhook(
-            channel.whatsappDetails.sessionName,
-            channel.whatsappDetails.webhookUrl,
-          );
-
-          if (shouldSync) {
-            syncWhatsAppChats(
-              channel.id,
-              channel.whatsappDetails.sessionName,
-            ).catch((error) => {
-              console.error("[Channels] Erro no sync após WORKING:", error);
-            });
-          }
-        }
-
-        return reply.send({
-          channelId: channel.id,
-          type: channel.type,
-          status: newStatus,
-          wahaStatus: wahaSession.status,
-          phoneNumber,
-          pushName: wahaSession.me?.pushName,
-        });
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Erro desconhecido";
-
-        return reply.send({
-          channelId: channel.id,
-          type: channel.type,
-          status: channel.status,
-          error: errorMessage,
-        });
-      }
-    },
-  );
+    const health = await checkWhatsappChannelHealth(channel);
+    const body: ChannelHealthResponse = {
+      channelId: channel.id,
+      type: channel.type,
+      status: health.status,
+      wahaStatus: health.wahaStatus,
+      me: health.me,
+      lastInboundAt: lastInbound?.toISOString() ?? null,
+      checkedAt,
+      ...(health.webhookOk !== undefined ? { webhookOk: health.webhookOk } : {}),
+      ...(health.webhookRepaired ? { webhookRepaired: true } : {}),
+      ...(health.error ? { error: health.error } : {}),
+    };
+    return reply.send(body);
+  });
 
   /**
    * POST /channels/:id/reconnect
-   * Tenta reconectar uma sessão que falhou
+   * Reinicia a sessão; se ela não existir mais no WAHA, recria com o mesmo nome
+   * e configura o webhook (o QR precisa ser escaneado de novo).
    */
-  app.post(
-    "/:id/reconnect",
-    { preHandler: authMiddleware },
-    async (request, reply) => {
-      const user = request.user!;
-      const { id } = channelParamsSchema.parse(request.params);
+  app.post("/:id/reconnect", { preHandler: manage }, async (request, reply) => {
+    const user = request.user!;
+    const { id } = channelParamsSchema.parse(request.params);
 
-      const channel = await prisma.channel.findUnique({
-        where: { id },
-        include: { whatsappDetails: true },
-      });
+    const found = await findOwnedChannel(id, user, reply);
+    if (!found) return reply;
 
-      if (!channel) {
-        return reply.status(404).send({ error: "Canal não encontrado" });
-      }
+    const channel = asWhatsappChannel(found);
+    if (!channel) {
+      return reply.status(400).send({ error: "Canal não é do tipo WhatsApp" });
+    }
 
-      // Valida que o canal pertence à operation do usuário
-      if (channel.operationId !== user.operationId) {
-        return reply.status(403).send({ error: "Acesso negado" });
-      }
+    const { sessionName, webhookUrl } = channel.whatsappDetails;
 
-      if (channel.type !== ChannelType.WHATSAPP || !channel.whatsappDetails) {
-        return reply
-          .status(400)
-          .send({ error: "Canal não é do tipo WhatsApp" });
-      }
-
+    const configureWebhook = async () => {
       try {
-        // Tenta parar e iniciar a sessão
+        return !!(await ensureWhatsappSessionWebhook(sessionName, webhookUrl));
+      } catch (error) {
+        console.error("[Channels] Falha ao configurar webhook no reconnect:", error);
+        return false;
+      }
+    };
+
+    try {
+      let exists = true;
+      try {
+        await waha.getSession(sessionName);
+      } catch (error) {
+        if (!waha.isWahaSessionNotFound(error)) throw error;
+        exists = false;
+      }
+
+      let wahaSession: waha.WAHASession;
+      let webhookConfigured: boolean;
+
+      if (!exists) {
+        const resolvedWebhookUrl = resolveWhatsappWebhookUrl(webhookUrl);
+        if (!resolvedWebhookUrl) {
+          return reply.status(500).send({
+            error: "Webhook do WhatsApp não configurado. Defina APP_PUBLIC_URL no backend.",
+          });
+        }
+        // Recria parada, configura o webhook e só então inicia (evita reinício por PUT).
+        await waha.createSession({
+          name: sessionName,
+          start: false,
+          config: { webhooks: [waha.buildWebhookConfig(resolvedWebhookUrl)] },
+        });
+        webhookConfigured = await configureWebhook();
+        wahaSession = await waha.startSession(sessionName);
+      } else {
         try {
-          await waha.stopSession(channel.whatsappDetails.sessionName);
+          await waha.stopSession(sessionName);
         } catch {
           // Ignora erro se já estiver parada
         }
+        webhookConfigured = await configureWebhook();
+        wahaSession = await waha.startSession(sessionName);
+      }
 
-        const wahaSession = await waha.startSession(
-          channel.whatsappDetails.sessionName,
-        );
-        const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
+      const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
+      const phoneNumber = wahaSession.me?.id?.split("@")[0] || null;
+      await persistChannelStatus(channel, newStatus, phoneNumber);
 
-        if (wahaSession.status === "WORKING") {
-          await ensureWhatsappSessionWebhook(
-            channel.whatsappDetails.sessionName,
-            channel.whatsappDetails.webhookUrl,
-          );
-
-          syncWhatsAppChats(
-            channel.id,
-            channel.whatsappDetails.sessionName,
-          ).catch((error) => {
-            console.error("[Channels] Erro no sync após reconnect:", error);
-          });
-        }
-
-        await prisma.channel.update({
-          where: { id: channel.id },
-          data: { status: newStatus },
-        });
-
-        return reply.send({
-          channelId: channel.id,
-          status: newStatus,
-          wahaStatus: wahaSession.status,
-        });
-      } catch (error) {
-        console.error("[Channels] Erro ao reconectar:", error);
-
-        await prisma.channel.update({
-          where: { id: channel.id },
-          data: { status: ChannelStatus.FAILED },
-        });
-
-        return reply.status(500).send({
-          error: "Falha ao reconectar",
+      if (wahaSession.status === "WORKING") {
+        syncWhatsAppChats(channel.id, sessionName).catch((error) => {
+          console.error("[Channels] Erro no sync após reconnect:", error);
         });
       }
-    },
-  );
+
+      return reply.send({
+        channelId: channel.id,
+        status: newStatus,
+        wahaStatus: wahaSession.status,
+        recreated: !exists,
+        webhookConfigured,
+      });
+    } catch (error) {
+      console.error("[Channels] Erro ao reconectar:", error);
+
+      await persistChannelStatus(channel, ChannelStatus.FAILED);
+
+      return reply.status(502).send({
+        error: "Falha ao reconectar no WhatsApp. Tente novamente em instantes.",
+      });
+    }
+  });
 
   /**
    * DELETE /channels/:id
    * Remove um canal e sua sessão WAHA
    */
-  app.delete("/:id", { preHandler: authMiddleware }, async (request, reply) => {
+  app.delete("/:id", { preHandler: manage }, async (request, reply) => {
     const user = request.user!;
     const { id } = channelParamsSchema.parse(request.params);
 
-    const channel = await prisma.channel.findUnique({
-      where: { id },
-      include: { whatsappDetails: true },
-    });
+    const channel = await findOwnedChannel(id, user, reply);
+    if (!channel) return reply;
 
-    if (!channel) {
-      return reply.status(404).send({ error: "Canal não encontrado" });
-    }
-
-    // Valida que o canal pertence à operation do usuário
-    if (channel.operationId !== user.operationId) {
-      return reply.status(403).send({ error: "Acesso negado" });
+    // Remover apagaria em cascata todo o histórico de conversas do canal
+    const conversations = await prisma.conversation.count({ where: { channelId: channel.id } });
+    if (conversations > 0) {
+      return reply.status(409).send({
+        error: `Este canal tem ${conversations} conversa(s). Removê-lo apagaria o histórico; reconecte o número em vez de remover.`,
+        code: "CHANNEL_HAS_CONVERSATIONS",
+      });
     }
 
     // Se for WhatsApp, remove a sessão do WAHA primeiro
@@ -441,17 +434,19 @@ export async function channelsRoutes(app: FastifyInstance) {
       }
     }
 
-    // Remove o canal (cascade remove whatsappDetails)
+    // Remove o canal (sem conversas; cascade remove só whatsappDetails)
     await prisma.channel.delete({
       where: { id: channel.id },
     });
+    emitChannelUpdated(channel);
 
     return reply.status(204).send();
   });
 
   /**
    * GET /channels
-   * Lista todos os canais da operation do usuário (com filtros opcionais)
+   * Lista os canais da operation do usuário (com filtros opcionais), com a
+   * última mensagem recebida (`lastInboundAt`) e o atendente vinculado.
    */
   app.get("/", { preHandler: authMiddleware }, async (request, reply) => {
     const user = request.user!;
@@ -478,11 +473,16 @@ export async function channelsRoutes(app: FastifyInstance) {
         whatsappDetails: true,
         operation: { select: { id: true, name: true } },
         agent: { select: { id: true, name: true } },
+        _count: { select: { conversations: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    return reply.send({ channels });
+    const lastInbound = await lastInboundAtByChannel(channels.map((c) => c.id));
+
+    return reply.send({
+      channels: channels.map((c) => ({ ...c, lastInboundAt: lastInbound.get(c.id) ?? null })),
+    });
   });
 
   /**
@@ -694,25 +694,4 @@ export async function channelsRoutes(app: FastifyInstance) {
       }
     },
   );
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function mapWahaStatusToChannelStatus(
-  wahaStatus: waha.WAHASessionStatus,
-): ChannelStatus {
-  switch (wahaStatus) {
-    case "WORKING":
-      return ChannelStatus.WORKING;
-    case "STARTING":
-    case "SCAN_QR_CODE":
-      return ChannelStatus.CONNECTING;
-    case "STOPPED":
-      return ChannelStatus.STOPPED;
-    case "FAILED":
-    default:
-      return ChannelStatus.FAILED;
-  }
 }

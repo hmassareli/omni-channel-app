@@ -1,5 +1,6 @@
 import { ConversationStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../prisma";
+import { messageMediaKind } from "../conversations/message-view";
 import { conversationScope, DeskActor, getVisibleConversation } from "./access";
 
 const listInclude = {
@@ -15,7 +16,14 @@ const listInclude = {
   assignedAgent: { select: { id: true, name: true, avatarUrl: true } },
   queue: { select: { id: true, name: true } },
   messages: {
-    select: { content: true, direction: true, sentAt: true },
+    select: {
+      content: true,
+      direction: true,
+      sentAt: true,
+      hasMedia: true,
+      metadata: true,
+      payload: true,
+    },
     orderBy: { sentAt: "desc" },
     take: 1,
   },
@@ -34,7 +42,12 @@ export function toListItem(c: ConversationRow) {
     assignedAgent: c.assignedAgent,
     queue: c.queue,
     lastMessage: last
-      ? { content: last.content, direction: last.direction, sentAt: last.sentAt }
+      ? {
+          content: last.content,
+          direction: last.direction,
+          sentAt: last.sentAt,
+          mediaKind: messageMediaKind(last, c.channel.type),
+        }
       : null,
     unreadCount: c.unreadCount,
   };

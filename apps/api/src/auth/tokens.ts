@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "crypto";
+import { createHash, createHmac, randomBytes } from "crypto";
 import { jwtVerify, SignJWT } from "jose";
 import { prisma } from "../prisma";
 
@@ -33,6 +33,14 @@ async function getJwtSecret(): Promise<Uint8Array> {
   });
   cachedSecret = new TextEncoder().encode(setting.value);
   return cachedSecret;
+}
+
+/**
+ * Segredo derivado do segredo do JWT para outro propósito (ex.: assinar URLs
+ * de mídia). HMAC(segredoJwt, "omni:<propósito>"): vazar um não revela o outro.
+ */
+export async function getDerivedSecret(purpose: string): Promise<Buffer> {
+  return createHmac("sha256", await getJwtSecret()).update(`omni:${purpose}`).digest();
 }
 
 /** Limpa o cache (testes). */

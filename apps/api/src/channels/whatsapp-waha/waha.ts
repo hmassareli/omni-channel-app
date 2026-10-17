@@ -26,16 +26,20 @@ export type WAHASessionStatus =
   | "WORKING"
   | "FAILED";
 
+export interface WAHAWebhookConfig {
+  url: string;
+  events: string[];
+  hmac?: { key: string } | null;
+  customHeaders?: Array<{ name: string; value: string }> | null;
+}
+
 export interface WAHASession {
   name: string;
   status: WAHASessionStatus;
-  config: {
+  config?: {
     proxy?: string;
-    webhooks?: Array<{
-      url: string;
-      events: string[];
-    }>;
-  };
+    webhooks?: WAHAWebhookConfig[];
+  } | null;
   me?: {
     id: string;
     pushName: string;
@@ -50,11 +54,7 @@ export interface WAHASessionCreate {
   start?: boolean;
   config?: {
     proxy?: string;
-    webhooks?: Array<{
-      url: string;
-      events: string[];
-      hmac?: { key: string };
-    }>;
+    webhooks?: WAHAWebhookConfig[];
   };
 }
 
@@ -67,6 +67,44 @@ export interface WAHAQRCode {
 export interface WAHAError {
   error: string;
   message: string;
+}
+
+/** Erro devolvido pelo WAHA (preserva o status HTTP). */
+export class WahaRequestError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: number,
+  ) {
+    super(message);
+    this.name = "WahaRequestError";
+  }
+}
+
+/** A sessão não existe no WAHA (404 / "Session not found"). */
+export function isWahaSessionNotFound(error: unknown): boolean {
+  if (error instanceof WahaRequestError && error.statusCode === 404) return true;
+  return error instanceof Error && /session .*not found|not found.*session/i.test(error.message);
+}
+
+/** Eventos de webhook que o app consome. */
+export const WAHA_WEBHOOK_EVENTS = ["message.any", "message.ack", "session.status"];
+
+/** Configuração de webhook (URL + header x-webhook-secret, se houver segredo). */
+export function buildWebhookConfig(
+  webhookUrl: string,
+  events: string[] = WAHA_WEBHOOK_EVENTS,
+): WAHAWebhookConfig {
+  return {
+    url: webhookUrl,
+    events,
+    ...(process.env.WEBHOOK_SECRET
+      ? {
+          customHeaders: [
+            { name: "x-webhook-secret", value: process.env.WEBHOOK_SECRET },
+          ],
+        }
+      : {}),
+  };
 }
 
 // ============================================================================
@@ -100,12 +138,21 @@ async function wahaRequest<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const data = await response.body.json();
+  const text = await response.body.text();
+  let data: unknown = undefined;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { message: text };
+    }
+  }
 
   if (response.statusCode >= 400) {
-    const error = data as WAHAError;
-    throw new Error(
-      `WAHA Error: ${error.message || error.error || "Unknown error"}`,
+    const error = (data ?? {}) as Partial<WAHAError>;
+    throw new WahaRequestError(
+      `WAHA Error: ${error.message || error.error || `HTTP ${response.statusCode}`}`,
+      response.statusCode,
     );
   }
 
@@ -193,14 +240,14 @@ export async function getQRCode(
 
   if (response.statusCode >= 400) {
     // Tenta ler como JSON para pegar a mensagem de erro
+    let message = `HTTP ${response.statusCode}`;
     try {
-      const error = (await response.body.json()) as WAHAError;
-      throw new Error(
-        `WAHA Error: ${error.message || error.error || "Unknown error"}`,
-      );
+      const error = (await response.body.json()) as Partial<WAHAError>;
+      message = error.message || error.error || message;
     } catch {
-      throw new Error(`WAHA Error: HTTP ${response.statusCode}`);
+      // corpo não-JSON: fica o status HTTP
     }
+    throw new WahaRequestError(`WAHA Error: ${message}`, response.statusCode);
   }
 
   if (format === "image") {
@@ -290,24 +337,10 @@ export async function waitForStatus(
 export async function configureWebhooks(
   sessionName: string,
   webhookUrl: string,
-  events: string[] = ["message.any", "session.status"],
+  events: string[] = WAHA_WEBHOOK_EVENTS,
 ): Promise<void> {
   await wahaRequest("PUT", `/api/sessions/${sessionName}`, {
-    config: {
-      webhooks: [
-        {
-          url: webhookUrl,
-          events,
-          ...(process.env.WEBHOOK_SECRET
-            ? {
-                customHeaders: [
-                  { name: "x-webhook-secret", value: process.env.WEBHOOK_SECRET },
-                ],
-              }
-            : {}),
-        },
-      ],
-    },
+    config: { webhooks: [buildWebhookConfig(webhookUrl, events)] },
   });
 }
 

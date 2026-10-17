@@ -1,4 +1,5 @@
 import { ChannelType, Prisma, type Channel } from "@prisma/client";
+import { emitDeskEvent } from "../../events/bus";
 import { prisma } from "../../prisma";
 import { ingestChannelMessage, type IngestResult } from "../../services/conversations/ingest";
 import type { ChannelEvent } from "../types";
@@ -159,15 +160,23 @@ export async function handleWhatsappStatus(event: StatusEvent): Promise<void> {
     return;
   }
 
+  const previous = whatsappChannel.channel;
   await prisma.channel.update({
     where: { id: whatsappChannel.channelId },
     data: {
       status: event.status,
       // Salva o número quando conectar
-      externalIdentifier:
-        event.externalIdentifier || whatsappChannel.channel.externalIdentifier,
+      externalIdentifier: event.externalIdentifier || previous.externalIdentifier,
     },
   });
+
+  if (previous.operationId && previous.status !== event.status) {
+    emitDeskEvent({
+      type: "channel.updated",
+      operationId: previous.operationId,
+      channelId: previous.id,
+    });
+  }
 
   console.log(
     `[Webhook] Canal ${whatsappChannel.channel.name} atualizado: ${event.status}`,

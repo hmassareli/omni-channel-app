@@ -19,6 +19,7 @@ const InboxPage = lazy(() => import("./features/inbox/pages/InboxPage"));
 const DashboardPage = lazy(() => import("./features/dashboard/pages/DashboardPage"));
 const QueuesPage = lazy(() => import("./features/queues/pages/QueuesPage"));
 const TeamPage = lazy(() => import("./features/team/pages/TeamPage"));
+const ChannelsPage = lazy(() => import("./features/channels/pages/ChannelsPage"));
 const ContactPage = lazy(() => import("./features/contacts/pages/ContactPage"));
 
 /** Rota inicial. */
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/opportunities/:id" element={<OpportunityPage />} />
             <Route path="/contacts/:id" element={<ContactPage />} />
             <Route path="/settings/queues" element={<QueuesPage />} />
+            <Route path="/settings/channels" element={<ChannelsPage />} />
             <Route path="/settings/team" element={<TeamPage />} />
             <Route path="*" element={<Navigate to={HOME_PATH} replace />} />
           </Route>

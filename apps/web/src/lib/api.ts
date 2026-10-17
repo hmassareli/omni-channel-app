@@ -5,6 +5,8 @@ import type {
   AgentWithRelations,
   AuthUser,
   Channel,
+  ChannelHealthResponse,
+  ChannelListItem as ApiChannelListItem,
   ChannelStatus,
   ChannelStatusResponse,
   ChannelWithDetails,
@@ -32,6 +34,7 @@ import type {
   OpportunityListItem,
   Pagination,
   QRCodeResponse,
+  ReconnectChannelResponse,
   ReorderStagesResponse,
   Stage,
   StageWithRelations,
@@ -43,6 +46,8 @@ import type {
   ConversationDetail,
   ConversationListItem,
   CreateNoteResponse,
+  DeskDeliveryAck,
+  DeskMediaKind,
   DeskMetricsResponse,
   DeskQueue,
   GetContactResponse,
@@ -51,6 +56,7 @@ import type {
   GetMessagesResponse,
   GetQueuesResponse,
   QueueResponse,
+  SendMessageResponse,
   GetCompanyResponse,
 } from "@omni/api/api-types";
 import { API_BASE_URL, getAccessToken, logout, refreshSession } from "./auth";
@@ -58,6 +64,8 @@ import { API_BASE_URL, getAccessToken, logout, refreshSession } from "./auth";
 // Re-export types para facilitar uso nos componentes
 export type {
   ContactDetail,
+  DeskDeliveryAck,
+  DeskMediaKind,
   ConversationDetail,
   ConversationListItem,
   DeskMetricsResponse,
@@ -65,6 +73,7 @@ export type {
   Agent,
   AgentWithRelations,
   Channel,
+  ChannelHealthResponse,
   ChannelStatus,
   ChannelStatusResponse,
   ChannelWithDetails,
@@ -79,6 +88,7 @@ export type {
   OpportunityListItem,
   Pagination,
   QRCodeResponse,
+  ReconnectChannelResponse,
   Stage,
   StageWithRelations,
   WhatsAppChat,
@@ -222,12 +232,22 @@ export async function getAgents(): Promise<AgentWithRelations[]> {
 // Channels (WhatsApp)
 // ============================================================================
 
-export async function getChannels(): Promise<ChannelWithDetails[]> {
-  const response = await apiRequest<{ channels: ChannelWithDetails[] }>(
+/** Canal da listagem como chega no JSON (datas em string ISO). */
+export type ChannelListItem = Serialized<ApiChannelListItem>;
+
+export async function getChannels(): Promise<ChannelListItem[]> {
+  const response = await apiRequest<{ channels: ChannelListItem[] }>(
     "GET",
     "/channels",
   );
   return response.channels;
+}
+
+/** Consulta o WhatsApp ao vivo (status, número, webhook, última mensagem). */
+export async function getChannelHealth(
+  channelId: string,
+): Promise<ChannelHealthResponse> {
+  return apiRequest<ChannelHealthResponse>("GET", `/channels/${channelId}/health`);
 }
 
 export async function createWhatsAppChannel(data: {
@@ -258,8 +278,11 @@ export async function getChannelStatus(
   );
 }
 
-export async function reconnectChannel(channelId: string): Promise<void> {
-  await apiRequest<void>("POST", `/channels/${channelId}/reconnect`);
+/** Reinicia a sessão; se ela não existir mais no WAHA, é recriada (novo QR). */
+export async function reconnectChannel(
+  channelId: string,
+): Promise<ReconnectChannelResponse> {
+  return apiRequest<ReconnectChannelResponse>("POST", `/channels/${channelId}/reconnect`);
 }
 
 export async function deleteChannel(channelId: string): Promise<void> {
@@ -650,6 +673,13 @@ type Serialized<T> = T extends Date
     ? { [K in keyof T]: Serialized<T[K]> }
     : T;
 export type DeskMessage = Serialized<GetMessagesResponse["messages"][number]>;
+export type DeskMessageMedia = NonNullable<DeskMessage["media"]>;
+export type SentMessage = Serialized<SendMessageResponse["message"]>;
+
+/** URL absoluta de um caminho da API (ex.: URL assinada de mídia `/media/...`). */
+export function apiUrl(path: string): string {
+  return /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`;
+}
 export type DeskNote = Serialized<CreateNoteResponse["event"]>;
 export type DeskMessagesPage = { messages: DeskMessage[]; hasMore: boolean };
 
@@ -692,8 +722,8 @@ export async function getConversationMessages(
 export async function sendConversationMessage(
   id: string,
   text: string,
-): Promise<DeskMessage> {
-  const r = await apiRequest<{ message: DeskMessage }>("POST", `/conversations/${id}/messages`, { text });
+): Promise<SentMessage> {
+  const r = await apiRequest<{ message: SentMessage }>("POST", `/conversations/${id}/messages`, { text });
   return r.message;
 }
 

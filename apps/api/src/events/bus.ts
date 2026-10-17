@@ -2,7 +2,9 @@ import { EventEmitter } from "events";
 
 export type DeskEvent =
   | { type: "message.created"; operationId: string; conversationId: string; messageId: string }
-  | { type: "conversation.updated"; operationId: string; conversationId: string };
+  | { type: "conversation.updated"; operationId: string; conversationId: string }
+  /** Status/conexão de um canal mudou (webhook session.status, health, reconectar...). */
+  | { type: "channel.updated"; operationId: string; channelId: string };
 
 const emitter = new EventEmitter();
 emitter.setMaxListeners(0);

@@ -1,4 +1,15 @@
-import { Inbox, Search } from "lucide-react";
+import {
+  Contact,
+  FileText,
+  Image as ImageIcon,
+  Inbox,
+  MapPin,
+  Mic,
+  Search,
+  Sticker,
+  Video,
+  type LucideIcon,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   Avatar,
@@ -11,12 +22,27 @@ import {
   Skeleton,
   Tabs,
 } from "../../../components/ui";
-import type { ConversationListItem, ConversationStatusValue } from "../../../lib/api";
+import type {
+  ConversationListItem,
+  ConversationStatusValue,
+  DeskMediaKind,
+} from "../../../lib/api";
 import { cn } from "../../../lib/cn";
 import { formatRelativeTime } from "../../../lib/format";
 import { useDebouncedValue } from "../../../lib/useDebouncedValue";
 import { useConversationList, useQueues } from "../hooks";
-import { CHANNEL_LABEL } from "../labels";
+import { CHANNEL_LABEL, MEDIA_LABEL } from "../labels";
+
+const MEDIA_ICON: Record<DeskMediaKind, LucideIcon> = {
+  image: ImageIcon,
+  sticker: Sticker,
+  video: Video,
+  audio: Mic,
+  voice: Mic,
+  document: FileText,
+  location: MapPin,
+  contact: Contact,
+};
 
 type Scope = "me" | "unassigned" | "all";
 
@@ -35,9 +61,13 @@ function ConversationItem({
   active: boolean;
   onSelect: () => void;
 }) {
-  const preview = item.lastMessage
-    ? `${item.lastMessage.direction === "OUTBOUND" ? "Você: " : ""}${item.lastMessage.content ?? "[mídia]"}`
+  const last = item.lastMessage;
+  const mediaKind = last?.mediaKind ?? null;
+  const MediaIcon = mediaKind ? MEDIA_ICON[mediaKind] : null;
+  const previewText = last
+    ? (last.content ?? (mediaKind ? MEDIA_LABEL[mediaKind] : "Mensagem"))
     : "Sem mensagens";
+  const prefix = last?.direction === "OUTBOUND" ? "Você: " : "";
   const unread = item.unreadCount > 0;
   return (
     <li>
@@ -71,11 +101,13 @@ function ConversationItem({
           <div className="mt-0.5 flex items-center justify-between gap-2">
             <p
               className={cn(
-                "truncate text-xs",
+                "flex min-w-0 items-center gap-1 text-xs",
                 unread ? "font-medium text-fg" : "text-fg-muted",
               )}
             >
-              {preview}
+              {prefix && <span className="shrink-0">{prefix}</span>}
+              {MediaIcon && <MediaIcon className="size-3.5 shrink-0" aria-hidden />}
+              <span className="truncate">{previewText}</span>
             </p>
             {unread && (
               <span

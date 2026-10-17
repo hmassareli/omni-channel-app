@@ -5,12 +5,79 @@ import type { DeskMessage, DeskNote } from "../../../lib/api";
 import { cn } from "../../../lib/cn";
 import { formatClock, formatDayLabel } from "../../../lib/format";
 import { useConversationMessages, useConversationNotes } from "../hooks";
+import { DeliveryTicks, MessageMedia, QuotedMessage } from "./MessageMedia";
 
 type ThreadItem =
   | { kind: "message"; id: string; at: string; message: DeskMessage }
   | { kind: "note"; id: string; at: string; note: DeskNote };
 
-function Bubble({ item }: { item: ThreadItem }) {
+function MessageBubble({
+  message,
+  at,
+  onJump,
+}: {
+  message: DeskMessage;
+  at: string;
+  onJump: (id: string) => void;
+}) {
+  const out = message.direction === "OUTBOUND";
+  const { media } = message;
+  const text = message.content;
+  // Foto/vídeo ocupam o balão inteiro (moldura fina); o resto tem padding normal.
+  const framed =
+    !!media && (media.kind === "image" || media.kind === "video") && media.available;
+
+  const meta = (
+    <span className="flex items-center justify-end gap-1 text-2xs text-fg-muted">
+      {formatClock(at)}
+      {out && message.ack && <DeliveryTicks ack={message.ack} />}
+    </span>
+  );
+
+  // Figurinha: sem balão.
+  if (media?.kind === "sticker" && !text && !message.replyTo) {
+    return (
+      <div id={`msg-${message.id}`} className={cn("flex", out ? "justify-end" : "justify-start")}>
+        <div className={cn("flex flex-col gap-0.5", out ? "items-end" : "items-start")}>
+          <MessageMedia message={message} />
+          {meta}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div id={`msg-${message.id}`} className={cn("flex", out ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "max-w-[75%] rounded-xl text-sm",
+          framed ? "p-1" : "px-3 py-2",
+          out
+            ? "rounded-br-sm bg-accent-100 text-fg"
+            : "rounded-bl-sm border border-line bg-surface text-fg",
+        )}
+      >
+        {message.replyTo && (
+          <div className={cn(framed && "px-1 pt-1")}>
+            <QuotedMessage replyTo={message.replyTo} outbound={out} onJump={onJump} />
+          </div>
+        )}
+        {media && <MessageMedia message={message} />}
+        {!media && message.hasMedia && !text && (
+          <p className="italic text-fg-muted">Mídia indisponível</p>
+        )}
+        {text && (
+          <p className={cn("whitespace-pre-wrap break-words", media && "mt-1.5", framed && "px-2")}>
+            {text}
+          </p>
+        )}
+        <div className={cn("mt-1", framed && "px-2 pb-1")}>{meta}</div>
+      </div>
+    </div>
+  );
+}
+
+function Bubble({ item, onJump }: { item: ThreadItem; onJump: (id: string) => void }) {
   if (item.kind === "note") {
     return (
       <div className="flex justify-center">
@@ -24,23 +91,17 @@ function Bubble({ item }: { item: ThreadItem }) {
       </div>
     );
   }
-  const out = item.message.direction === "OUTBOUND";
-  return (
-    <div className={cn("flex", out ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[75%] rounded-xl px-3 py-2 text-sm",
-          out
-            ? "rounded-br-sm bg-accent-100 text-fg"
-            : "rounded-bl-sm border border-line bg-surface text-fg",
-        )}
-      >
-        <p className="whitespace-pre-wrap break-words">
-          {item.message.content ?? (item.message.hasMedia ? "[mídia]" : "")}
-        </p>
-        <p className="mt-1 text-right text-2xs text-fg-muted">{formatClock(item.at)}</p>
-      </div>
-    </div>
+  return <MessageBubble message={item.message} at={item.at} onJump={onJump} />;
+}
+
+/** Rola até a mensagem citada e a destaca por um instante. */
+function jumpToMessage(id: string) {
+  const el = document.getElementById(`msg-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.animate(
+    [{ backgroundColor: "var(--color-accent-100)" }, { backgroundColor: "transparent" }],
+    { duration: 1200, easing: "ease-out" },
   );
 }
 
@@ -154,7 +215,7 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
                 </span>
               </div>
             )}
-            <Bubble item={item} />
+            <Bubble item={item} onJump={jumpToMessage} />
           </div>
         );
       })}

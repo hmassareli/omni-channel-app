@@ -11,3 +11,6 @@ coverage
 # Segredos de deploy e config local do Claude Code
 .env.deploy
 .claude/settings.local.json
+
+# Mídia baixada pela API (MEDIA_DIR padrão)
+apps/api/data/

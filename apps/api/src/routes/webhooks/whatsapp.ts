@@ -1,6 +1,7 @@
 import { ChannelType } from "@prisma/client";
 import { FastifyInstance } from "fastify";
 import { getChannelAdapter } from "../../channels/registry";
+import { handleWhatsappAck } from "../../channels/whatsapp-waha/ack";
 import {
   handleIgnoredWhatsappEvent,
   handleWhatsappMessage,
@@ -64,6 +65,11 @@ export async function registerWhatsappWebhookRoutes(app: FastifyInstance) {
         return reply
           .status(202)
           .send({ processed: true, event: "session.status" });
+      }
+
+      if (event.kind === "ack") {
+        const { updated } = await handleWhatsappAck(event);
+        return reply.status(202).send({ processed: true, event: "message.ack", updated });
       }
 
       if (event.kind === "ignored") {

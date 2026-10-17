@@ -4,6 +4,7 @@ import {
   LogOut,
   Layers,
   MessageSquare,
+  RadioTower,
   Target,
   UserCog,
   type LucideIcon,
@@ -13,6 +14,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useSession } from "../../features/auth/authContext";
 import { cn } from "../../lib/cn";
 import { useDeskEvents } from "../../features/inbox/hooks";
+import { ChannelStatusBanner } from "../../features/channels/components/ChannelStatusBanner";
 import { Avatar, Spinner } from "../ui";
 
 const NAV_ITEMS: Array<{ to: string; label: string; icon: LucideIcon }> = [
@@ -21,6 +23,7 @@ const NAV_ITEMS: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/companies", label: "Empresas", icon: Building2 },
   { to: "/opportunities", label: "Oportunidades", icon: Target },
   { to: "/settings/queues", label: "Filas", icon: Layers },
+  { to: "/settings/channels", label: "Canais", icon: RadioTower },
   { to: "/settings/team", label: "Equipe", icon: UserCog },
 ];
 
@@ -127,6 +130,7 @@ export function AppShell() {
     <div className="flex h-screen bg-canvas">
       <SideNav />
       <div className="flex min-w-0 flex-1 flex-col">
+        <ChannelStatusBanner />
         <div className="flex h-14 shrink-0 items-center justify-end border-b border-line bg-surface px-6">
           <UserMenu />
         </div>

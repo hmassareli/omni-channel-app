@@ -28,10 +28,7 @@ export async function ensureWhatsappSessionWebhook(
     return null;
   }
 
-  await waha.configureWebhooks(sessionName, resolvedWebhookUrl, [
-    "message.any",
-    "session.status",
-  ]);
+  await waha.configureWebhooks(sessionName, resolvedWebhookUrl, waha.WAHA_WEBHOOK_EVENTS);
 
   return resolvedWebhookUrl;
 }

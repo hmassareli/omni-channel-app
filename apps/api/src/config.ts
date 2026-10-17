@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import path from "path";
 
 dotenv.config();
 
@@ -24,5 +25,14 @@ export const config = {
   /** Segredo compartilhado exigido nos webhooks de canais. */
   get webhookSecret(): string | undefined {
     return process.env.WEBHOOK_SECRET?.trim() || undefined;
+  },
+  /** Onde os arquivos de mídia baixados ficam (em produção: volume em /app/data). */
+  get mediaDir(): string {
+    return path.resolve(process.env.MEDIA_DIR?.trim() || path.join(process.cwd(), "data", "media"));
+  },
+  /** Tamanho máximo de um arquivo de mídia (padrão 50 MB). */
+  get mediaMaxBytes(): number {
+    const configured = Number(process.env.MEDIA_MAX_BYTES);
+    return Number.isFinite(configured) && configured > 0 ? configured : 50 * 1024 * 1024;
   },
 };

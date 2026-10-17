@@ -13,6 +13,7 @@ import { TokenVerifier, setTokenVerifier } from "./middleware/auth";
 import { eventsRoutes } from "./events/sse";
 import { stopJobs } from "./jobs/boss";
 import { reconfigureAllWhatsappWebhooks } from "./channels/whatsapp-waha/webhook-config";
+import { startWhatsappHealthMonitor } from "./channels/whatsapp-waha/monitor";
 import { startJobs } from "./jobs/workers";
 import { prisma } from "./prisma";
 
@@ -22,6 +23,7 @@ import { authRoutes } from "./routes/auth";
 import { channelsRoutes } from "./routes/channels";
 import { companiesRoutes } from "./routes/companies";
 import { contactsRoutes } from "./routes/contacts";
+import { mediaRoutes } from "./routes/media";
 import { conversationsRoutes } from "./routes/conversations";
 import { metricsRoutes } from "./routes/metrics";
 import { operationsRoutes } from "./routes/operations";
@@ -117,6 +119,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(queuesRoutes, { prefix: "/queues" });
   await app.register(metricsRoutes, { prefix: "/metrics" });
   await app.register(eventsRoutes, { prefix: "/events" });
+  await app.register(mediaRoutes, { prefix: "/media" });
 
   return app;
 }
@@ -133,6 +136,9 @@ if (require.main === module) {
       reconfigureAllWhatsappWebhooks().catch((error) =>
         console.error("[Webhook] Reconfiguração no boot falhou:", error),
       );
+      // Detecta sessões que morreram no WAHA sem avisar (status no banco fica velho).
+      // (timer com unref: não segura o processo no shutdown)
+      startWhatsappHealthMonitor();
       console.log("HTTP server running on http://localhost:3333");
     });
   });

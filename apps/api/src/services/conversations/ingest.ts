@@ -4,6 +4,7 @@ import { emitDeskEvent } from "../../events/bus";
 import { prisma } from "../../prisma";
 import { scheduleConversationAnalysis } from "../conversation-analysis";
 import { onInboundMessage } from "../desk/hooks";
+import { buildInboundMetadata, enqueueMediaDownload } from "./media";
 import { createTimelineEventFromMessage } from "./timeline";
 
 // ============================================================================
@@ -86,6 +87,8 @@ export async function ingestChannelMessage(
     });
   }
 
+  const metadata = buildInboundMetadata(message);
+
   try {
     const created = await prisma.message.create({
       data: {
@@ -100,6 +103,7 @@ export async function ingestChannelMessage(
         externalId: message.externalMessageId,
         sentAt,
         requiresProcessing: true,
+        metadata: metadata as Prisma.InputJsonObject | undefined,
       },
     });
 
@@ -119,6 +123,7 @@ export async function ingestChannelMessage(
         sentAt,
         externalId: message.externalMessageId,
         hasMedia: message.hasMedia,
+        mediaKind: message.media?.kind ?? null,
       },
       channelType: channel.type,
       rawRecordId: options.rawRecordId,
@@ -139,6 +144,16 @@ export async function ingestChannelMessage(
         conversationId: conversation.id,
         messageId: created.id,
       });
+    }
+
+    // O provedor apaga o arquivo em minutos: baixa já (job durável com retry).
+    const sourceUrl = message.media?.sourceUrl;
+    if (sourceUrl) {
+      try {
+        await enqueueMediaDownload(created.id, sourceUrl);
+      } catch (error) {
+        console.error(`[Ingest] falha ao agendar download de mídia ${created.id}:`, error);
+      }
     }
 
     return { skipped: false, conversationId: conversation.id, messageId: created.id };

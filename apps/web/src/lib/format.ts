@@ -95,3 +95,23 @@ export function formatDuration(seconds: number | null | undefined): string {
   if (h > 0) return m > 0 ? `${h} h ${m} min` : `${h} h`;
   return s > 0 ? `${m} min ${s} s` : `${m} min`;
 }
+
+/** Tempo decorrido por extenso: "há instantes", "há 5 min", "há 3 h", "há 2 dias", "há 4 meses". */
+export function formatTimeAgo(dateValue: string | Date): string {
+  const diffMin = Math.floor((Date.now() - new Date(dateValue).getTime()) / 60_000);
+  if (diffMin < 1) return "há instantes";
+  if (diffMin < 60) return `há ${diffMin} min`;
+  const hours = Math.floor(diffMin / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return days === 1 ? "há 1 dia" : `há ${days} dias`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return months === 1 ? "há 1 mês" : `há ${months} meses`;
+  const years = Math.floor(days / 365);
+  return years <= 1 ? "há 1 ano" : `há ${years} anos`;
+}
+
+/** Milissegundos desde a data (para comparar com limites, ex. 24 h). */
+export function msSince(dateValue: string | Date): number {
+  return Date.now() - new Date(dateValue).getTime();
+}

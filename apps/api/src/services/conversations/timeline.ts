@@ -17,11 +17,27 @@ type TimelineMessagePayload = {
   sentAt: Date;
   externalId: string | null;
   hasMedia?: boolean;
+  mediaKind?: string | null;
+};
+
+const MEDIA_TIMELINE_LABEL: Record<string, string> = {
+  image: "[Foto]",
+  sticker: "[Figurinha]",
+  video: "[Vídeo]",
+  audio: "[Áudio]",
+  voice: "[Áudio]",
+  document: "[Documento]",
+  location: "[Localização]",
+  contact: "[Contato]",
 };
 
 function resolveTimelineContent(message: TimelineMessagePayload) {
   if (message.content && message.content.trim()) {
     return message.content;
+  }
+
+  if (message.mediaKind && MEDIA_TIMELINE_LABEL[message.mediaKind]) {
+    return MEDIA_TIMELINE_LABEL[message.mediaKind];
   }
 
   if (message.hasMedia) {

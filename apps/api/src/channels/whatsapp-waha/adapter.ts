@@ -1,6 +1,8 @@
 import { ChannelType } from "@prisma/client";
 import { prisma } from "../../prisma";
 import type { ChannelAdapter } from "../types";
+import { describeWahaPayload } from "./extract";
+import { fetchWahaMedia } from "./media";
 import { parseWahaWebhook } from "./parse";
 import * as waha from "./waha";
 
@@ -9,6 +11,10 @@ export const whatsappWahaAdapter: ChannelAdapter = {
   type: ChannelType.WHATSAPP,
 
   parseWebhook: parseWahaWebhook,
+
+  fetchMedia: (_channel, sourceUrl) => fetchWahaMedia(sourceUrl),
+
+  describeStoredPayload: describeWahaPayload,
 
   async send(channel, message) {
     const whatsappChannel = await prisma.whatsAppChannel.findUnique({

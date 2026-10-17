@@ -41,7 +41,10 @@ export function createSseParser(onMessage: (msg: SseMessage) => void) {
 
 export type DeskEvent =
   | { type: "message.created"; conversationId: string; messageId: string }
-  | { type: "conversation.updated"; conversationId: string };
+  | { type: "conversation.updated"; conversationId: string }
+  | { type: "channel.updated"; channelId: string };
+
+const EVENT_TYPES = new Set<string>(["message.created", "conversation.updated", "channel.updated"]);
 
 /**
  * Abre o stream /events e reconecta com backoff exponencial (1s até 30s).
@@ -71,7 +74,7 @@ export function subscribeToEvents(
         attempt = 0;
         onStatus?.(true);
         const parse = createSseParser((msg) => {
-          if (msg.event !== "message.created" && msg.event !== "conversation.updated") return;
+          if (!EVENT_TYPES.has(msg.event)) return;
           try {
             const payload = JSON.parse(msg.data) as Record<string, string>;
             onEvent({ type: msg.event, ...payload } as DeskEvent);

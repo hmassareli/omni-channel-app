@@ -1,6 +1,7 @@
 import { ChannelStatus } from "@prisma/client";
 import { z } from "zod";
 import type { ChannelEvent } from "../types";
+import { extractWahaMedia, extractWahaReply, mapWahaAck } from "./extract";
 
 // ============================================================================
 // Parsing do webhook do WAHA -> ChannelEvent normalizado
@@ -131,7 +132,9 @@ function endsWithJid(value: string | null | undefined, suffix: string) {
 function buildSkipDiagnostics(payload: MessagePayload) {
   const hasTextBody = Boolean(payload.body && payload.body.trim().length > 0);
   const hasMedia = toBoolean(payload.hasMedia);
-  const hasContent = hasTextBody || hasMedia;
+  // Localização e contato chegam sem body e com hasMedia=false.
+  const hasAttachment = extractWahaMedia(payload) !== null;
+  const hasContent = hasTextBody || hasMedia || hasAttachment;
   const hasParticipant = Boolean(payload.participant);
   const hasDefaultSubgroupFlag = payload.isDefaultSubgroup !== undefined;
   const idHasNewsletter = Boolean(payload.id?.includes("@newsletter"));
@@ -311,13 +314,10 @@ export function resolveTimestamp(payload: MessagePayload): Date {
   return new Date();
 }
 
-function resolveContent(payload: MessagePayload): string {
-  if (toBoolean(payload.hasMedia)) {
-    return "<media>";
-  }
-
-  const text = payload.body ?? "";
-  return text.trim();
+/** Texto da mensagem; em mídia é a legenda. Null quando vazio (nunca "<media>"). */
+function resolveContent(payload: MessagePayload): string | null {
+  const text = (payload.body ?? "").trim();
+  return text || null;
 }
 
 function mapWahaStatusToChannelStatus(
@@ -454,7 +454,14 @@ function parseMessage(body: unknown): ChannelEvent[] {
   }
 
   const sentAt = resolveTimestamp(messagePayload);
-  const hasMedia = toBoolean(messagePayload.hasMedia);
+  // Extrai do payload original: o schema descarta campos desconhecidos de `_data`
+  // (ex.: _data.Message.stickerMessage), úteis para classificar a mídia.
+  const originalPayload = originalMessagePayload(body) ?? messagePayload;
+  const media = extractWahaMedia(originalPayload);
+  const reply = extractWahaReply(originalPayload);
+  const hasMedia = toBoolean(messagePayload.hasMedia) || media !== null;
+  const loose = messagePayload as Record<string, unknown>;
+  const text = media?.kind === "sticker" ? null : resolveContent(messagePayload);
 
   return [
     {
@@ -466,11 +473,65 @@ function parseMessage(body: unknown): ChannelEvent[] {
         externalMessageId: messagePayload.id ?? null,
         conversationExternalId: messagePayload.chatId ?? null,
         direction,
-        text: resolveContent(messagePayload),
+        text,
         hasMedia,
+        media,
+        replyToExternalId: reply.replyToExternalId,
+        quotedText: reply.quotedText,
+        ack:
+          direction === "OUTBOUND" ? mapWahaAck(loose.ack, loose.ackName) : null,
         sentAt,
         raw: messagePayload,
       },
+    },
+  ];
+}
+
+function originalMessagePayload(body: unknown): Record<string, unknown> | null {
+  const record = (body ?? {}) as Record<string, unknown>;
+  const envelope =
+    record.body && typeof record.body === "object"
+      ? (record.body as Record<string, unknown>)
+      : record;
+  const payload = envelope.payload;
+  return payload && typeof payload === "object"
+    ? (payload as Record<string, unknown>)
+    : null;
+}
+
+const ackWebhookSchema = z
+  .object({
+    event: z.literal("message.ack"),
+    session: z.string().optional(),
+    me: z.object({ id: z.string().optional() }).loose().optional().nullable(),
+    payload: z
+      .object({
+        id: z.string(),
+        ack: z.union([z.number(), z.string()]).optional().nullable(),
+        ackName: z.string().optional().nullable(),
+      })
+      .loose(),
+  })
+  .loose();
+
+/** message.ack: status de entrega de uma mensagem. */
+function parseAck(body: Record<string, unknown>): ChannelEvent[] {
+  const result = ackWebhookSchema.safeParse(body);
+  if (!result.success) {
+    throw new InvalidWebhookPayloadError("Invalid message.ack payload", result.error);
+  }
+  const { session, me, payload } = result.data;
+  const ack = mapWahaAck(payload.ack, payload.ackName);
+  if (!ack) {
+    return [{ kind: "ignored", reason: "unknown-ack" }];
+  }
+  return [
+    {
+      kind: "ack",
+      sessionKey: session ?? "",
+      externalIdentifier: sanitizeWaId(me?.id),
+      externalMessageId: payload.id,
+      ack,
     },
   ];
 }
@@ -481,6 +542,10 @@ export function parseWahaWebhook(body: unknown): ChannelEvent[] {
 
   if (record.event === "session.status") {
     return parseSessionStatus(record);
+  }
+
+  if (record.event === "message.ack") {
+    return parseAck(record);
   }
 
   return parseMessage(body);

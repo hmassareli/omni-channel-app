@@ -9,6 +9,7 @@ import PgBoss from "pg-boss";
 export const QUEUES = {
   analyzeConversation: "analyze-conversation",
   sendMessage: "send-message",
+  downloadMedia: "download-media",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
@@ -16,6 +17,7 @@ export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 export interface JobPayloads {
   "analyze-conversation": { conversationId: string };
   "send-message": { messageId: string };
+  "download-media": { messageId: string; sourceUrl: string };
 }
 
 /** Retry com backoff exponencial; análise tem no máximo 1 job pendente por conversa. */
@@ -32,6 +34,15 @@ const queueOptions: Record<QueueName, PgBoss.Queue> = {
     name: QUEUES.sendMessage,
     retryLimit: 5,
     retryDelay: 5,
+    retryBackoff: true,
+    expireInMinutes: 5,
+  },
+  // O WAHA apaga o arquivo em poucos minutos: tentativas curtas (10s, 20s, 40s, 80s).
+  // O handler desiste sozinho na 5ª tentativa (MEDIA_MAX_ATTEMPTS) e grava o erro.
+  "download-media": {
+    name: QUEUES.downloadMedia,
+    retryLimit: 4,
+    retryDelay: 10,
     retryBackoff: true,
     expireInMinutes: 5,
   },

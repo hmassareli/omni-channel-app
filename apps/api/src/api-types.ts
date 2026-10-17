@@ -166,8 +166,42 @@ export type ChannelWithDetails = Prisma.ChannelGetPayload<{
   };
 }>;
 
+/** Item de GET /channels (datas chegam como string ISO no JSON). */
+export type ChannelListItem = ChannelWithDetails & {
+  _count: { conversations: number };
+  /** Última mensagem INBOUND recebida no canal. */
+  lastInboundAt: Date | string | null;
+};
+
 export interface GetChannelsResponse {
-  channels: ChannelWithDetails[];
+  channels: ChannelListItem[];
+}
+
+/** GET /channels/:id/health – consulta ao vivo no WAHA. */
+export interface ChannelHealthResponse {
+  channelId: string;
+  type: Prisma.ChannelGetPayload<{}>["type"];
+  /** Status gravado após a checagem. */
+  status: Prisma.ChannelGetPayload<{}>["status"];
+  /** Status ao vivo no WAHA; "NOT_FOUND" = sessão não existe; null = WAHA inacessível/não se aplica. */
+  wahaStatus: "STOPPED" | "STARTING" | "SCAN_QR_CODE" | "WORKING" | "FAILED" | "NOT_FOUND" | null;
+  /** Número conectado. */
+  me: { phoneNumber: string; pushName: string | null } | null;
+  lastInboundAt: string | null;
+  /** Webhook da sessão aponta para o app (ausente = não foi possível avaliar). */
+  webhookOk?: boolean;
+  webhookRepaired?: boolean;
+  checkedAt: string;
+  error?: string;
+}
+
+export interface ReconnectChannelResponse {
+  channelId: string;
+  status: Prisma.ChannelGetPayload<{}>["status"];
+  wahaStatus: string;
+  /** A sessão não existia no WAHA e foi recriada (precisa escanear o QR). */
+  recreated: boolean;
+  webhookConfigured: boolean;
 }
 
 export interface CreateWhatsAppChannelResponse {
@@ -368,6 +402,8 @@ export interface ConversationListItem {
     content: string | null;
     direction: Prisma.MessageGetPayload<{}>["direction"];
     sentAt: string;
+    /** Tipo da mídia da última mensagem (prévia "Foto", "Áudio"...). */
+    mediaKind: DeskMediaKind | null;
   } | null;
   unreadCount: number;
 }
@@ -440,8 +476,45 @@ export interface DeskMetricsResponse {
   volumeByDay: Array<{ date: string; inbound: number; outbound: number }>;
 }
 
+export type DeskMediaKind =
+  | "image"
+  | "sticker"
+  | "video"
+  | "audio"
+  | "voice"
+  | "document"
+  | "location"
+  | "contact";
+
+export type DeskDeliveryAck = "pending" | "sent" | "delivered" | "read";
+
+export interface DeskMessageMedia {
+  kind: DeskMediaKind;
+  mimetype: string | null;
+  filename: string | null;
+  caption: string | null;
+  /** Caminho assinado e de curta duração (relativo à API: `/media/:id?exp=&sig=`). Null = indisponível. */
+  url: string | null;
+  available: boolean;
+  /** Download ainda em andamento (mostrar "carregando", não "indisponível"). */
+  pending: boolean;
+  size: number | null;
+}
+
+/** Mensagem da conversa (GET /conversations/:id/messages). Sem o payload cru do provedor. */
+export interface DeskThreadMessage
+  extends Omit<Prisma.MessageGetPayload<{}>, "payload" | "metadata"> {
+  media: DeskMessageMedia | null;
+  /** Resposta a outra mensagem: `id` = mensagem citada nesta conversa (se encontrada). */
+  replyTo: { id: string | null; text: string | null } | null;
+  location: { lat: number; lng: number; name: string | null } | null;
+  contactCard: { name: string | null; phone: string | null } | null;
+  /** Status de entrega (só mensagens enviadas). */
+  ack: DeskDeliveryAck | null;
+}
+
 export interface GetMessagesResponse {
-  messages: Prisma.MessageGetPayload<{}>[];
+  messages: DeskThreadMessage[];
   hasMore: boolean;
 }
 

@@ -3,6 +3,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
 import { prisma } from "../../prisma";
+import { toThreadMessages } from "../../services/conversations/message-view";
 import {
   addNote,
   assignConversation,
@@ -94,7 +95,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
     deskHandler(async (actor, request, reply) => {
       const { id } = conversationParamsSchema.parse(request.params);
       const query = messagesQuerySchema.parse(request.query);
-      await getVisibleConversation(actor, id);
+      const conversation = await getVisibleConversation(actor, id);
 
       const where: Prisma.MessageWhereInput = {
         conversationId: id,
@@ -120,9 +121,14 @@ export async function conversationsRoutes(app: FastifyInstance) {
         take: query.limit,
       });
 
-      // Retorna em ordem cronológica
+      // Retorna em ordem cronológica, com mídia (URL assinada), citação e ack.
+      // Só chega aqui quem pode ver a conversa: só ele recebe as URLs assinadas.
       return reply.send({
-        messages: messages.reverse(),
+        messages: await toThreadMessages(
+          messages.reverse(),
+          id,
+          conversation.channel.type,
+        ),
         hasMore: messages.length === query.limit,
       });
     }),

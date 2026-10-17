@@ -141,17 +141,21 @@ export function useDeskEvents(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     return subscribeToEvents((event) => {
+      if (event.type === "channel.updated") {
+        // Status de conexão de um canal mudou (lista de canais e aviso global).
+        void qc.invalidateQueries({ queryKey: ["channels"] });
+        return;
+      }
       void qc.invalidateQueries({ queryKey: ["conversations", "list"] });
       void qc.invalidateQueries({
         queryKey: inboxKeys.detail(event.conversationId),
       });
       void qc.invalidateQueries({ queryKey: inboxKeys.metrics });
       void qc.invalidateQueries({ queryKey: inboxKeys.notes(event.conversationId) });
-      if (event.type === "message.created") {
-        void qc.invalidateQueries({
-          queryKey: inboxKeys.messages(event.conversationId),
-        });
-      }
+      // conversation.updated também cobre mídia baixada e status de entrega (ack).
+      void qc.invalidateQueries({
+        queryKey: inboxKeys.messages(event.conversationId),
+      });
     });
   }, [qc, enabled]);
 }

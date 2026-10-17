@@ -1,4 +1,5 @@
 import { analyzeConversation } from "../services/conversation-analysis";
+import { downloadMessageMedia } from "../services/conversations/media";
 import { deliverMessage } from "../services/conversations/send";
 import { getBoss, QUEUES, type JobPayloads, type QueueName } from "./boss";
 
@@ -7,7 +8,10 @@ export const handlers: { [Q in QueueName]: (data: JobPayloads[Q]) => Promise<voi
   "analyze-conversation": ({ conversationId }) =>
     analyzeConversation(conversationId),
   "send-message": ({ messageId }) => deliverMessage(messageId),
+  "download-media": ({ messageId, sourceUrl }) => downloadMessageMedia(messageId, sourceUrl),
 };
+
+const mediaConcurrency = Math.max(1, Number(process.env.MEDIA_DOWNLOAD_CONCURRENCY ?? 2));
 
 const analysisConcurrency = Math.max(
   1,
@@ -29,4 +33,11 @@ export async function startJobs() {
     QUEUES.sendMessage,
     async ([job]) => handlers["send-message"](job.data),
   );
+
+  for (let i = 0; i < mediaConcurrency; i += 1) {
+    await boss.work<JobPayloads["download-media"]>(
+      QUEUES.downloadMedia,
+      async ([job]) => handlers["download-media"](job.data),
+    );
+  }
 }

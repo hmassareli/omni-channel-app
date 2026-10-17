@@ -62,8 +62,24 @@ Componentes base em `src/components/ui/`: Button, Input, Select, Badge, Card, Av
 ## Pendências do contrato (levantadas pelo front da mesa)
 - Falta `GET /conversations/:id/notes` → `{ events: TimelineEvent[] }` (NOTE da conversa). O front já chama essa rota; enquanto ela retornar 404, só aparecem as notas criadas na sessão atual.
 
+## Canais (conexão do WhatsApp)
+- `GET /channels` → `{ channels: ChannelListItem[] }` (canal + `whatsappDetails`, `agent:{id,name}|null`, `_count.conversations`, `lastInboundAt` = última mensagem INBOUND, uma consulta agregada). Qualquer papel.
+- `GET /channels/:id/health` → `ChannelHealthResponse` `{ channelId, type, status, wahaStatus, me:{phoneNumber,pushName}|null, lastInboundAt, webhookOk?, webhookRepaired?, checkedAt, error? }`. Consulta o WAHA ao vivo e grava o status. `wahaStatus: "NOT_FOUND"` = sessão sumiu do WAHA (canal vira STOPPED, 200); `null` = WAHA inacessível (status mantido). Com sessão WORKING e webhook errado, reconfigura (`webhookRepaired`). Qualquer papel.
+- `POST /channels/whatsapp`, `GET /channels/:id/qr` (409 `SESSION_NOT_FOUND` se a sessão não existe), `POST /channels/:id/reconnect` (sessão inexistente no WAHA é recriada com o mesmo `sessionName` + webhook; `{ recreated, webhookConfigured }`; falha → 502), `DELETE /channels/:id` (apaga também as conversas do canal): só ADMIN/MANAGER.
+- Evento SSE `channel.updated {channelId}` quando o status de um canal muda (webhook `session.status`, health, reconnect, criação/remoção).
+- Monitor no servidor (`channels/whatsapp-waha/monitor.ts`, a cada 3 min, só fora de testes e com `WAHA_API_URL`) roda o health de todos os canais WhatsApp: sessões que morrem sem mandar `session.status` passam a aparecer como desconectadas.
+- Web: `/settings/channels` (tela Canais) e faixa de aviso no AppShell quando há WhatsApp STOPPED/FAILED.
+
 ## Rodando a demo
 1. `docker compose up -d postgres` e `npm run db:migrate -w @omni/api`
 2. `DEMO_ADMIN_EMAIL=seu@email.com npm run db:seed:demo -w @omni/api` (cria a operação "Água Branca (Demo)")
 3. `npm run dev:api` e `npm run dev:web`; entre com o mesmo e-mail.
 Observação: o canal do seed não está conectado ao WAHA; enviar resposta nele retorna 502 até conectar uma sessão real.
+
+## Mídia, citações e status de entrega
+- O adaptador normaliza `media` (`image|sticker|video|audio|voice|document|location|contact`), `replyToExternalId`/`quotedText` e `ack` em `NormalizedInboundMessage`. O texto é a legenda (ou null; nunca `<media>`).
+- Na ingestão, `Message.metadata` recebe `media`/`replyTo`/`ack`; com `sourceUrl`, o job `download-media` (pg-boss, até 5 tentativas) baixa via `adapter.fetchMedia` para `MEDIA_DIR/<operationId>/<messageId>.<ext>` (limite `MEDIA_MAX_BYTES`, padrão 50 MB) e emite `conversation.updated`.
+- `GET /conversations/:id/messages` devolve cada mensagem sem `payload`/`metadata` e com `media {kind,mimetype,filename,caption,url,available,pending,size}`, `replyTo {id,text}`, `location`, `contactCard` e `ack` (`pending|sent|delivered|read|null`). Mensagens antigas: derivado de `Message.payload` (`adapter.describeStoredPayload`).
+- `media.url` é um caminho relativo à API, `/media/:messageId?exp=&sig=` (HMAC-SHA256 com segredo derivado do JWT, ~1h), gerado só para quem pode ver a conversa. A rota suporta Range e força download de tipos não seguros.
+- `GET /conversations` → `lastMessage.mediaKind` para a prévia.
+- WAHA: evento `message.ack` atualiza `metadata.ack` (sem regredir) e emite `conversation.updated`.
