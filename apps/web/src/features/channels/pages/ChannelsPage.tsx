@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Clock,
+  History,
   MessageCircle,
   Phone,
   Plus,
@@ -137,6 +138,15 @@ function ChannelCard({
                   : "Nenhuma mensagem recebida ainda"}
               </span>
             </div>
+            {channel.predecessors?.length > 0 && (
+              <p className="flex items-center gap-1 text-xs text-fg-faint">
+                <History className="size-3.5" />
+                Inclui o histórico de{" "}
+                {channel.predecessors
+                  .map((p) => `"${p.name}"${p.replacedAt ? ` (substituído em ${new Date(p.replacedAt).toLocaleDateString("pt-BR")})` : ""}`)
+                  .join(", ")}
+              </p>
+            )}
           </div>
         </div>
 
@@ -288,19 +298,16 @@ function RemoveChannelDialog({ channel, onClose }: { channel: ChannelListItem; o
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          {count === 0 && (
-            <Button variant="danger" loading={remove.isPending} onClick={() => remove.mutate(channel.id, { onSuccess: onClose })}>
-              Remover
-            </Button>
-          )}
+          <Button variant="danger" loading={remove.isPending} onClick={() => remove.mutate(channel.id, { onSuccess: onClose })}>
+            Remover
+          </Button>
         </>
       }
     >
       {count > 0 ? (
-        <p className="flex items-start gap-2 rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          Este canal tem {count === 1 ? "1 conversa" : `${count} conversas`}. Para não apagar o histórico,
-          ele não pode ser removido. Para trocar o celular, use Reconectar.
+        <p className="text-sm text-fg-muted">
+          {count === 1 ? "A conversa deste canal continua" : `As ${count} conversas deste canal continuam`} no
+          histórico. Se este número for conectado de novo, num canal novo, o histórico passa para ele.
         </p>
       ) : (
         <p className="text-sm text-fg-muted">Este canal não tem conversas.</p>

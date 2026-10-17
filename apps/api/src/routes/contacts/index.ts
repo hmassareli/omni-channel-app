@@ -263,7 +263,7 @@ export async function contactsRoutes(app: FastifyInstance) {
 
       // Verifica se o channel pertence à operação do usuário
       const channel = await prisma.channel.findFirst({
-        where: { id: body.channelId, operationId: user.operationId },
+        where: { id: body.channelId, operationId: user.operationId, archivedAt: null },
         include: { whatsappDetails: true },
       });
       if (!channel) {

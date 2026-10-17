@@ -229,7 +229,28 @@ describe("POST /webhooks/whatsapp", () => {
       expect(res.statusCode).toBe(202);
       expect((await prisma.conversation.findFirstOrThrow()).channelId).toBe(current.id);
       expect((await prisma.channel.findUniqueOrThrow({ where: { id: current.id } })).externalIdentifier).toBe(BUSINESS);
-      expect((await prisma.channel.findUniqueOrThrow({ where: { id: old.id } })).externalIdentifier).toBeNull();
+      const archived = await prisma.channel.findUniqueOrThrow({ where: { id: old.id } });
+      expect(archived.externalIdentifier).toBeNull();
+      expect(archived.replacedById).toBe(current.id);
+    });
+
+    it("canal de outra operação só perde o número; o histórico fica lá", async () => {
+      const current = await createChannel();
+      await prisma.channel.update({ where: { id: current.id }, data: { externalIdentifier: null } });
+      const opA = await prisma.operation.create({ data: { name: "Op A" } });
+      const other = await prisma.channel.create({
+        data: { name: "De outro cliente", type: "WHATSAPP", externalIdentifier: BUSINESS, operationId: opA.id },
+      });
+      const contact = await prisma.contact.create({ data: { name: "Antigo" } });
+      await prisma.conversation.create({
+        data: { channelId: other.id, contactId: contact.id, firstMessageAt: new Date(), lastMessageAt: new Date() },
+      });
+
+      expect((await http.post("/webhooks/whatsapp", auth, messageBody())).statusCode).toBe(202);
+      const kept = await prisma.channel.findUniqueOrThrow({ where: { id: other.id } });
+      expect(kept.externalIdentifier).toBeNull();
+      expect(kept.replacedById).toBeNull();
+      expect(await prisma.conversation.count({ where: { channelId: other.id } })).toBe(1);
     });
 
     it("ignora mensagens vazias e de grupo (202 skipped)", async () => {
@@ -296,7 +317,7 @@ describe("POST /webhooks/whatsapp", () => {
       const res = await http.post("/webhooks/whatsapp", auth, statusBody("WORKING"));
       expect(res.statusCode).toBe(202);
       expect((await prisma.channel.findUniqueOrThrow({ where: { id: channel.id } })).externalIdentifier).toBe(BUSINESS);
-      expect((await prisma.channel.findUniqueOrThrow({ where: { id: old.id } })).externalIdentifier).toBeNull();
+      expect((await prisma.channel.findUniqueOrThrow({ where: { id: old.id } })).replacedById).toBe(channel.id);
     });
 
     it("mapeia STOPPED e FAILED", async () => {

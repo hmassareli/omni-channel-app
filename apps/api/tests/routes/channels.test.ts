@@ -447,16 +447,48 @@ describe("rotas de canais", () => {
     });
   });
   describe("DELETE /channels/:id", () => {
-    it("recusa (409) quando o canal tem conversas, preservando o histórico", async () => {
+    it("com conversas, arquiva em vez de apagar: some da lista e mantém o histórico", async () => {
       const admin = await createAuthedUser({ role: "ADMIN" });
       const channel = await createWhatsappChannel(admin.operationId);
       await createDeskConversation(admin.operationId, { channelId: channel.id });
 
       const res = await http.del(`/channels/${channel.id}`, admin.headers);
-      expect(res.statusCode).toBe(409);
-      expect(res.json().code).toBe("CHANNEL_HAS_CONVERSATIONS");
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ archived: true, conversations: 1 });
+      expect(wahaMock.deleteSession).toHaveBeenCalledWith(channel.whatsappDetails!.sessionName);
+
+      const archived = await prisma.channel.findUniqueOrThrow({
+        where: { id: channel.id },
+        include: { whatsappDetails: true },
+      });
+      expect(archived.archivedAt).not.toBeNull();
+      expect(archived.whatsappDetails).toBeNull();
       expect(await prisma.conversation.count({ where: { channelId: channel.id } })).toBe(1);
-      expect(wahaMock.deleteSession).not.toHaveBeenCalled();
+
+      const list = await http.get("/channels", admin.headers);
+      expect(list.json().channels.map((c: { id: string }) => c.id)).not.toContain(channel.id);
+      expect((await http.get(`/channels/${channel.id}/health`, admin.headers)).statusCode).toBe(404);
+    });
+
+    it("lista mostra de quais canais antigos o histórico foi herdado", async () => {
+      const admin = await createAuthedUser({ role: "ADMIN" });
+      const current = await createWhatsappChannel(admin.operationId);
+      await prisma.channel.create({
+        data: {
+          name: "Antigo",
+          type: "WHATSAPP",
+          operationId: admin.operationId,
+          archivedAt: new Date(),
+          replacedById: current.id,
+          replacedAt: new Date("2026-10-17T12:00:00Z"),
+        },
+      });
+      const item = (await http.get("/channels", admin.headers))
+        .json()
+        .channels.find((c: { id: string }) => c.id === current.id);
+      expect(item.predecessors).toEqual([
+        expect.objectContaining({ name: "Antigo", replacedAt: "2026-10-17T12:00:00.000Z" }),
+      ]);
     });
 
     it("remove canal sem conversas", async () => {

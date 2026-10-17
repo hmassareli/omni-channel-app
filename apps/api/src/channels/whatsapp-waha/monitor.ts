@@ -7,7 +7,12 @@ const DEFAULT_INTERVAL_MS = 3 * 60_000;
 /** Verifica ao vivo todas as sessões WhatsApp com operação (atualiza status e emite channel.updated). */
 export async function checkAllWhatsappChannels(): Promise<void> {
   const channels = await prisma.channel.findMany({
-    where: { type: ChannelType.WHATSAPP, operationId: { not: null }, whatsappDetails: { isNot: null } },
+    where: {
+      type: ChannelType.WHATSAPP,
+      operationId: { not: null },
+      archivedAt: null,
+      whatsappDetails: { isNot: null },
+    },
     include: { whatsappDetails: true },
   });
   for (const channel of channels) {

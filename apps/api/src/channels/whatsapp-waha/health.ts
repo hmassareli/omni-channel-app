@@ -1,6 +1,7 @@
 import { ChannelStatus, ChannelType, Prisma, type Channel, type WhatsAppChannel } from "@prisma/client";
 import { emitDeskEvent } from "../../events/bus";
 import { prisma } from "../../prisma";
+import { mergeChannelInto } from "../../services/channels/merge";
 import { syncWhatsAppChats } from "./sync";
 import * as waha from "./waha";
 import { ensureWhatsappSessionWebhook, isSessionWebhookOk } from "./webhook-config";
@@ -131,22 +132,45 @@ export function emitChannelUpdated(channel: Pick<Channel, "id" | "operationId">)
   emitDeskEvent({ type: "channel.updated", operationId: channel.operationId, channelId: channel.id });
 }
 
+/** Uma reivindicação por número por vez (webhook e health podem chegar juntos). */
+const claimsInFlight = new Map<string, Promise<void>>();
+
 /**
- * Vincula o número ao canal dono da sessão conectada. Se outro canal ainda guarda o
- * número (ex.: canal antigo cuja sessão sumiu), ele perde o vínculo: quem está com a
- * sessão ativa é a verdade, senão as mensagens seriam roteadas para o canal velho.
+ * Vincula o número ao canal dono da sessão conectada. O número é a identidade: se
+ * outro canal ainda o guarda (canal antigo, arquivado ou cuja sessão sumiu), o
+ * histórico dele passa para este canal e ele fica só como registro da substituição.
+ * Canal de outra operação só perde o número; o histórico de outro cliente não vem junto.
  */
 export async function claimChannelNumber(channelId: string, phoneNumber: string): Promise<void> {
-  const [released] = await prisma.$transaction([
-    prisma.channel.updateMany({
-      where: { type: ChannelType.WHATSAPP, externalIdentifier: phoneNumber, id: { not: channelId } },
-      data: { externalIdentifier: null },
-    }),
-    prisma.channel.update({ where: { id: channelId }, data: { externalIdentifier: phoneNumber } }),
-  ]);
-  if (released.count > 0) {
-    console.warn(`[Channels] Número ${phoneNumber} transferido para o canal ${channelId}`);
+  const previous = claimsInFlight.get(phoneNumber) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(() => doClaimChannelNumber(channelId, phoneNumber));
+  claimsInFlight.set(phoneNumber, run);
+  try {
+    await run;
+  } finally {
+    if (claimsInFlight.get(phoneNumber) === run) claimsInFlight.delete(phoneNumber);
   }
+}
+
+async function doClaimChannelNumber(channelId: string, phoneNumber: string): Promise<void> {
+  const [channel, holders] = await Promise.all([
+    prisma.channel.findUniqueOrThrow({ where: { id: channelId }, select: { operationId: true } }),
+    prisma.channel.findMany({
+      where: { type: ChannelType.WHATSAPP, externalIdentifier: phoneNumber, id: { not: channelId } },
+      select: { id: true, operationId: true },
+    }),
+  ]);
+  for (const holder of holders) {
+    if (holder.operationId === null || holder.operationId === channel.operationId) {
+      await mergeChannelInto(holder.id, channelId);
+    } else {
+      await prisma.channel.update({ where: { id: holder.id }, data: { externalIdentifier: null } });
+      console.warn(
+        `[Channels] Número ${phoneNumber} saiu do canal ${holder.id} (outra operação) para ${channelId}; histórico mantido lá`,
+      );
+    }
+  }
+  await prisma.channel.update({ where: { id: channelId }, data: { externalIdentifier: phoneNumber } });
 }
 
 /** Grava o novo status (e o número, se vier); emite evento se o status mudou. */

@@ -20,7 +20,11 @@ import {
   settleSessionStatus,
   type WhatsappChannelRecord,
 } from "../../channels/whatsapp-waha/health";
-import type { ChannelHealthResponse, ReconnectChannelResponse } from "../../api-types";
+import type {
+  ChannelHealthResponse,
+  DeleteChannelResponse,
+  ReconnectChannelResponse,
+} from "../../api-types";
 
 // ============================================================================
 // Schemas de validação
@@ -57,7 +61,8 @@ async function findOwnedChannel(id: string, user: AuthenticatedUser, reply: Fast
     where: { id },
     include: { whatsappDetails: true },
   });
-  if (!channel) {
+  // Arquivado = removido para quem usa; só o histórico continua.
+  if (!channel || channel.archivedAt) {
     reply.status(404).send({ error: "Canal não encontrado" });
     return null;
   }
@@ -436,7 +441,9 @@ export async function channelsRoutes(app: FastifyInstance) {
 
   /**
    * DELETE /channels/:id
-   * Remove um canal e sua sessão WAHA
+   * Desliga a sessão WAHA e remove o canal. Com conversas, arquiva em vez de apagar:
+   * o histórico continua visível e, se o mesmo número for conectado num canal novo,
+   * passa para ele (ver claimChannelNumber).
    */
   app.delete("/:id", { preHandler: manage }, async (request, reply) => {
     const user = request.user!;
@@ -444,15 +451,6 @@ export async function channelsRoutes(app: FastifyInstance) {
 
     const channel = await findOwnedChannel(id, user, reply);
     if (!channel) return reply;
-
-    // Remover apagaria em cascata todo o histórico de conversas do canal
-    const conversations = await prisma.conversation.count({ where: { channelId: channel.id } });
-    if (conversations > 0) {
-      return reply.status(409).send({
-        error: `Este canal tem ${conversations} conversa(s). Removê-lo apagaria o histórico; reconecte o número em vez de remover.`,
-        code: "CHANNEL_HAS_CONVERSATIONS",
-      });
-    }
 
     // Se for WhatsApp, remove a sessão do WAHA primeiro
     if (channel.type === ChannelType.WHATSAPP && channel.whatsappDetails) {
@@ -463,7 +461,20 @@ export async function channelsRoutes(app: FastifyInstance) {
       }
     }
 
-    // Remove o canal (sem conversas; cascade remove só whatsappDetails)
+    const conversations = await prisma.conversation.count({ where: { channelId: channel.id } });
+    if (conversations > 0) {
+      await prisma.$transaction([
+        prisma.whatsAppChannel.deleteMany({ where: { channelId: channel.id } }),
+        prisma.channel.update({
+          where: { id: channel.id },
+          data: { archivedAt: new Date(), status: ChannelStatus.STOPPED },
+        }),
+      ]);
+      emitChannelUpdated(channel);
+      return reply.send({ archived: true, conversations } satisfies DeleteChannelResponse);
+    }
+
+    // Sem conversas: nada a preservar (cascade remove só whatsappDetails)
     await prisma.channel.delete({
       where: { id: channel.id },
     });
@@ -494,6 +505,7 @@ export async function channelsRoutes(app: FastifyInstance) {
     const channels = await prisma.channel.findMany({
       where: {
         operationId: user.operationId, // Sempre filtra pela operation do usuário
+        archivedAt: null,
         agentId: query.agentId,
         type: query.type,
         status: query.status,
@@ -503,6 +515,7 @@ export async function channelsRoutes(app: FastifyInstance) {
         operation: { select: { id: true, name: true } },
         agent: { select: { id: true, name: true } },
         _count: { select: { conversations: true } },
+        predecessors: { select: { id: true, name: true, replacedAt: true }, orderBy: { replacedAt: "desc" } },
       },
       orderBy: { createdAt: "desc" },
     });

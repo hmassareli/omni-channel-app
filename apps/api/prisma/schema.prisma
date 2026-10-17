@@ -402,11 +402,19 @@ model Channel {
   metadata           Json? // Dados genéricos extras
   operationId        String?
   agentId            String? // null = canal compartilhado
+  // Arquivado: sessão desligada, fora das listas, histórico preservado. Um canal
+  // arquivado mantém o número para que uma nova conexão desse número o absorva.
+  archivedAt         DateTime?
+  // Canal que absorveu este (mesmo número reconectado em outro canal)
+  replacedById       String?
+  replacedAt         DateTime?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
   operation       Operation?       @relation(fields: [operationId], references: [id], onDelete: SetNull)
   agent           Agent?           @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  replacedBy      Channel?         @relation("ChannelReplacement", fields: [replacedById], references: [id], onDelete: SetNull)
+  predecessors    Channel[]        @relation("ChannelReplacement")
   conversations   Conversation[]
   whatsappDetails WhatsAppChannel? // Detalhes específicos se type=WHATSAPP
 

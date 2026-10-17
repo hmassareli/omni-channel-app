@@ -169,9 +169,17 @@ export type ChannelWithDetails = Prisma.ChannelGetPayload<{
 /** Item de GET /channels (datas chegam como string ISO no JSON). */
 export type ChannelListItem = ChannelWithDetails & {
   _count: { conversations: number };
+  /** Canais antigos do mesmo número cujo histórico foi absorvido por este. */
+  predecessors: { id: string; name: string; replacedAt: Date | string | null }[];
   /** Última mensagem INBOUND recebida no canal. */
   lastInboundAt: Date | string | null;
 };
+
+/** DELETE /channels/:id com conversas: o canal é arquivado (204 quando é apagado). */
+export interface DeleteChannelResponse {
+  archived: true;
+  conversations: number;
+}
 
 export interface GetChannelsResponse {
   channels: ChannelListItem[];
