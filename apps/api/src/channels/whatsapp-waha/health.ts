@@ -1,4 +1,4 @@
-import { ChannelStatus, Prisma, type Channel, type WhatsAppChannel } from "@prisma/client";
+import { ChannelStatus, ChannelType, Prisma, type Channel, type WhatsAppChannel } from "@prisma/client";
 import { emitDeskEvent } from "../../events/bus";
 import { prisma } from "../../prisma";
 import { syncWhatsAppChats } from "./sync";
@@ -153,6 +153,24 @@ export function emitChannelUpdated(channel: Pick<Channel, "id" | "operationId">)
   emitDeskEvent({ type: "channel.updated", operationId: channel.operationId, channelId: channel.id });
 }
 
+/**
+ * Vincula o número ao canal dono da sessão conectada. Se outro canal ainda guarda o
+ * número (ex.: canal antigo cuja sessão sumiu), ele perde o vínculo: quem está com a
+ * sessão ativa é a verdade, senão as mensagens seriam roteadas para o canal velho.
+ */
+export async function claimChannelNumber(channelId: string, phoneNumber: string): Promise<void> {
+  const [released] = await prisma.$transaction([
+    prisma.channel.updateMany({
+      where: { type: ChannelType.WHATSAPP, externalIdentifier: phoneNumber, id: { not: channelId } },
+      data: { externalIdentifier: null },
+    }),
+    prisma.channel.update({ where: { id: channelId }, data: { externalIdentifier: phoneNumber } }),
+  ]);
+  if (released.count > 0) {
+    console.warn(`[Channels] Número ${phoneNumber} transferido para o canal ${channelId}`);
+  }
+}
+
 /** Grava o novo status (e o número, se vier); emite evento se o status mudou. */
 export async function persistChannelStatus(
   channel: Channel,
@@ -164,19 +182,7 @@ export async function persistChannelStatus(
     await prisma.channel.update({ where: { id: channel.id }, data: { status } });
   }
   if (phoneNumber && phoneNumber !== channel.externalIdentifier) {
-    try {
-      await prisma.channel.update({
-        where: { id: channel.id },
-        data: { externalIdentifier: phoneNumber },
-      });
-    } catch (error) {
-      // Mesmo número já vinculado a outro canal (constraint única): mantém o atual.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        console.warn(`[Channels] Número ${phoneNumber} já está em uso por outro canal`);
-      } else {
-        throw error;
-      }
-    }
+    await claimChannelNumber(channel.id, phoneNumber);
   }
   if (changed) emitChannelUpdated(channel);
   return changed;

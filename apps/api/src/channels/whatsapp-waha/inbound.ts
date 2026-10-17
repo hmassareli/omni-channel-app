@@ -4,6 +4,7 @@ import { prisma } from "../../prisma";
 import { ingestChannelMessage, type IngestResult } from "../../services/conversations/ingest";
 import type { ChannelEvent } from "../types";
 import { logWebhookDebug, MISSING_CHANNEL_REASON } from "./parse";
+import { claimChannelNumber } from "./health";
 import { ensureWhatsappSessionWebhook } from "./webhook-config";
 import { syncWhatsAppChats } from "./sync";
 
@@ -17,21 +18,18 @@ function wahaIdOf(raw: unknown): string | null {
 }
 
 /**
- * Localiza o Channel da mensagem: pelo número (externalIdentifier), depois pelo
- * nome da sessão WAHA; se nada existir, cria um canal órfão (sem operação).
+ * Localiza o Channel da mensagem: pelo nome da sessão WAHA (quem recebeu de fato),
+ * depois pelo número (externalIdentifier); se nada existir, cria um canal órfão.
+ * O número vem antes só como fallback: um canal antigo pode ainda guardar o mesmo
+ * número depois que a sessão foi recriada em outro canal.
  */
 async function resolveChannel(event: MessageEvent): Promise<Channel> {
   const channelIdentifier = event.externalIdentifier ?? "";
   const sessionName = event.sessionKey || null;
 
-  let channel = await prisma.channel.findFirst({
-    where: {
-      type: ChannelType.WHATSAPP,
-      externalIdentifier: channelIdentifier,
-    },
-  });
+  let channel: Channel | null = null;
 
-  if (!channel && sessionName) {
+  if (sessionName) {
     const whatsappChannel = await prisma.whatsAppChannel.findUnique({
       where: { sessionName },
       include: { channel: true },
@@ -39,17 +37,20 @@ async function resolveChannel(event: MessageEvent): Promise<Channel> {
 
     if (whatsappChannel) {
       channel = whatsappChannel.channel;
-
-      // Atualiza o externalIdentifier para facilitar buscas futuras
-      await prisma.channel.update({
-        where: { id: channel.id },
-        data: { externalIdentifier: channelIdentifier },
-      });
-
-      console.log(
-        `[Ingest] Channel ${channel.name} atualizado com externalIdentifier: ${channelIdentifier}`,
-      );
+      if (channelIdentifier && channel.externalIdentifier !== channelIdentifier) {
+        await claimChannelNumber(channel.id, channelIdentifier);
+        channel = { ...channel, externalIdentifier: channelIdentifier };
+      }
     }
+  }
+
+  if (!channel) {
+    channel = await prisma.channel.findFirst({
+      where: {
+        type: ChannelType.WHATSAPP,
+        externalIdentifier: channelIdentifier,
+      },
+    });
   }
 
   if (!channel) {
@@ -163,12 +164,12 @@ export async function handleWhatsappStatus(event: StatusEvent): Promise<void> {
   const previous = whatsappChannel.channel;
   await prisma.channel.update({
     where: { id: whatsappChannel.channelId },
-    data: {
-      status: event.status,
-      // Salva o número quando conectar
-      externalIdentifier: event.externalIdentifier || previous.externalIdentifier,
-    },
+    data: { status: event.status },
   });
+  // Salva o número quando conectar
+  if (event.externalIdentifier && event.externalIdentifier !== previous.externalIdentifier) {
+    await claimChannelNumber(previous.id, event.externalIdentifier);
+  }
 
   if (previous.operationId && previous.status !== event.status) {
     emitDeskEvent({

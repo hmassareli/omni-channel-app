@@ -210,6 +210,28 @@ describe("POST /webhooks/whatsapp", () => {
       expect((await prisma.channel.findUniqueOrThrow({ where: { id: channel.id } })).externalIdentifier).toBe(BUSINESS);
     });
 
+    it("a sessão vence o número: canal antigo com o mesmo número perde o vínculo", async () => {
+      // Canal antigo (sem sessão) ainda guarda o número; a sessão foi recriada em outro canal.
+      const old = await prisma.channel.create({
+        data: { name: "Antigo", type: "WHATSAPP", externalIdentifier: BUSINESS },
+      });
+      const op = await prisma.operation.create({ data: { name: "Op" } });
+      const current = await prisma.channel.create({
+        data: {
+          name: "Atual",
+          type: "WHATSAPP",
+          operationId: op.id,
+          whatsappDetails: { create: { sessionName: "sessao-1" } },
+        },
+      });
+
+      const res = await http.post("/webhooks/whatsapp", auth, messageBody());
+      expect(res.statusCode).toBe(202);
+      expect((await prisma.conversation.findFirstOrThrow()).channelId).toBe(current.id);
+      expect((await prisma.channel.findUniqueOrThrow({ where: { id: current.id } })).externalIdentifier).toBe(BUSINESS);
+      expect((await prisma.channel.findUniqueOrThrow({ where: { id: old.id } })).externalIdentifier).toBeNull();
+    });
+
     it("ignora mensagens vazias e de grupo (202 skipped)", async () => {
       await createChannel();
       const empty = await http.post("/webhooks/whatsapp", auth, messageBody({ body: "  " }, "E1"));
@@ -262,6 +284,19 @@ describe("POST /webhooks/whatsapp", () => {
       expect(updated.status).toBe("CONNECTING");
       expect(updated.externalIdentifier).toBe(BUSINESS);
       expect(syncChats).not.toHaveBeenCalled();
+    });
+
+    it("ao conectar, assume o número que estava em outro canal", async () => {
+      const old = await prisma.channel.create({
+        data: { name: "Antigo", type: "WHATSAPP", externalIdentifier: BUSINESS },
+      });
+      const channel = await prisma.channel.create({
+        data: { name: "WA", type: "WHATSAPP", whatsappDetails: { create: { sessionName: "sessao-1" } } },
+      });
+      const res = await http.post("/webhooks/whatsapp", auth, statusBody("WORKING"));
+      expect(res.statusCode).toBe(202);
+      expect((await prisma.channel.findUniqueOrThrow({ where: { id: channel.id } })).externalIdentifier).toBe(BUSINESS);
+      expect((await prisma.channel.findUniqueOrThrow({ where: { id: old.id } })).externalIdentifier).toBeNull();
     });
 
     it("mapeia STOPPED e FAILED", async () => {
