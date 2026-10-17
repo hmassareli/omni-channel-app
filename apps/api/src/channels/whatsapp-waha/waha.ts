@@ -327,6 +327,17 @@ export async function waitForStatus(
   );
 }
 
+export interface WAHAServerVersion {
+  version: string;
+  engine?: string;
+  tier?: string;
+}
+
+/** Versão do servidor WAHA (usada no diagnóstico de falhas de conexão). */
+export async function getServerVersion(): Promise<WAHAServerVersion> {
+  return wahaRequest<WAHAServerVersion>("GET", "/api/server/version");
+}
+
 // ============================================================================
 // Webhook Configuration
 // ============================================================================

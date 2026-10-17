@@ -61,6 +61,8 @@ function healthSummary(h: ChannelHealthResponse): { text: string; tone: "muted" 
   }
   if (h.wahaStatus === "SCAN_QR_CODE") return { text: "Aguardando a leitura do QR code.", tone: "warning" };
   if (h.wahaStatus === "STARTING") return { text: "Sessão iniciando...", tone: "warning" };
+  if (h.wahaStatus === "FAILED")
+    return { text: h.error ?? "A conexão com o WhatsApp falhou. Reconecte o canal.", tone: "danger" };
   return { text: "Sessão parada no servidor do WhatsApp.", tone: "danger" };
 }
 

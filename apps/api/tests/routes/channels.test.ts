@@ -11,6 +11,7 @@ const { wahaMock, ensureWebhook, syncChats } = vi.hoisted(() => ({
     deleteSession: vi.fn(),
     getQRCode: vi.fn(),
     configureWebhooks: vi.fn(),
+    getServerVersion: vi.fn(),
   },
   ensureWebhook: vi.fn(async (_session: string, url?: string | null) => url ?? null),
   syncChats: vi.fn(async () => ({ totalChats: 0, newConversations: 0 })),
@@ -305,6 +306,73 @@ describe("rotas de canais", () => {
       expect(wahaMock.createSession).not.toHaveBeenCalled();
       expect(wahaMock.stopSession).toHaveBeenCalledOnce();
       expect(wahaMock.startSession).toHaveBeenCalledOnce();
+    });
+
+    it("credencial salva falha (STARTING -> FAILED): espera assentar e sugere novo QR", async () => {
+      const admin = await createAuthedUser({ role: "ADMIN" });
+      const channel = await createWhatsappChannel(admin.operationId, { status: "STOPPED" });
+      wahaMock.getSession
+        .mockResolvedValueOnce(session("STOPPED")) // existe?
+        .mockResolvedValue(session("FAILED")); // após o start
+      wahaMock.stopSession.mockResolvedValue(undefined);
+      wahaMock.startSession.mockResolvedValue(session("STARTING"));
+
+      const res = await http.post(`/channels/${channel.id}/reconnect`, admin.headers);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        status: "FAILED",
+        wahaStatus: "FAILED",
+        recreated: false,
+        failure: { code: "SESSION_FAILED" },
+      });
+      expect(wahaMock.deleteSession).not.toHaveBeenCalled();
+
+      // o diagnóstico continua aparecendo no health
+      const health = await http.get(`/channels/${channel.id}/health`, admin.headers);
+      expect(health.json()).toMatchObject({ status: "FAILED", failure: { code: "SESSION_FAILED" } });
+      expect(health.json().error).toContain("novo QR");
+    });
+
+    it("fresh: apaga a sessão, recria do zero; se nem assim gera QR, culpa o WAHA (com versão)", async () => {
+      const admin = await createAuthedUser({ role: "ADMIN" });
+      const channel = await createWhatsappChannel(admin.operationId, { status: "FAILED" });
+      const sessionName = channel.whatsappDetails!.sessionName;
+      wahaMock.getSession.mockResolvedValue(session("FAILED"));
+      wahaMock.deleteSession.mockResolvedValue(undefined);
+      wahaMock.createSession.mockResolvedValue(session("STOPPED"));
+      wahaMock.startSession.mockResolvedValue(session("FAILED"));
+      wahaMock.getServerVersion.mockResolvedValue({ version: "2026.3.4", engine: "GOWS" });
+
+      const res = await http.post(`/channels/${channel.id}/reconnect`, admin.headers, { fresh: true });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        status: "FAILED",
+        recreated: true,
+        failure: { code: "WAHA_CANNOT_CONNECT" },
+      });
+      expect(res.json().failure.error).toContain("2026.3.4");
+      expect(wahaMock.deleteSession).toHaveBeenCalledWith(sessionName);
+      expect(wahaMock.deleteSession.mock.invocationCallOrder[0]).toBeLessThan(
+        wahaMock.createSession.mock.invocationCallOrder[0],
+      );
+      expect(wahaMock.stopSession).not.toHaveBeenCalled();
+    });
+
+    it("fresh que chega ao QR limpa o diagnóstico anterior", async () => {
+      const admin = await createAuthedUser({ role: "ADMIN" });
+      const channel = await createWhatsappChannel(admin.operationId, { status: "FAILED" });
+      wahaMock.getSession.mockResolvedValue(session("FAILED"));
+      wahaMock.startSession.mockResolvedValue(session("FAILED"));
+      await http.post(`/channels/${channel.id}/reconnect`, admin.headers);
+
+      wahaMock.startSession.mockResolvedValue(session("SCAN_QR_CODE"));
+      const res = await http.post(`/channels/${channel.id}/reconnect`, admin.headers, { fresh: true });
+      expect(res.json()).toMatchObject({ status: "CONNECTING", wahaStatus: "SCAN_QR_CODE" });
+      expect(res.json().failure).toBeUndefined();
+
+      wahaMock.getSession.mockResolvedValue(session("SCAN_QR_CODE"));
+      const health = await http.get(`/channels/${channel.id}/health`, admin.headers);
+      expect(health.json().failure).toBeUndefined();
     });
 
     it("falha no WAHA: 502 e canal FAILED", async () => {

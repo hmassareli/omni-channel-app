@@ -22,6 +22,8 @@ export interface WhatsappHealth {
   /** O webhook estava errado e foi reconfigurado nesta checagem. */
   webhookRepaired?: boolean;
   error?: string;
+  /** Diagnóstico da última tentativa de conexão que falhou (só com status FAILED). */
+  failure?: ConnectFailure;
   /** O status gravado mudou nesta checagem. */
   changed: boolean;
 }
@@ -39,6 +41,86 @@ export function mapWahaStatusToChannelStatus(wahaStatus: waha.WAHASessionStatus)
     default:
       return ChannelStatus.FAILED;
   }
+}
+
+/** Status em que a sessão já "decidiu": QR pronto, conectada ou falhou. */
+const SETTLED_STATUSES: waha.WAHASessionStatus[] = ["SCAN_QR_CODE", "WORKING", "FAILED"];
+
+/**
+ * Logo após o start o WAHA responde STARTING; a recusa do WhatsApp chega segundos depois.
+ * Consulta até a sessão assentar (ou o tempo acabar) para responder o resultado real.
+ */
+export async function settleSessionStatus(
+  sessionName: string,
+  initial: waha.WAHASession,
+  timeoutMs = Number(process.env.WAHA_SETTLE_TIMEOUT_MS ?? 15000),
+  intervalMs = 1000,
+): Promise<waha.WAHASession> {
+  let current = initial;
+  const deadline = Date.now() + timeoutMs;
+  while (!SETTLED_STATUSES.includes(current.status) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    try {
+      current = await waha.getSession(sessionName);
+    } catch {
+      return current;
+    }
+  }
+  return current;
+}
+
+export type ConnectFailureCode = "SESSION_FAILED" | "WAHA_CANNOT_CONNECT";
+
+export interface ConnectFailure {
+  code: ConnectFailureCode;
+  error: string;
+  at: string;
+}
+
+/**
+ * Última falha de conexão por canal (memória do processo). O WAHA só informa "FAILED",
+ * sem motivo; o diagnóstico vem de como a falha aconteceu.
+ */
+const connectFailures = new Map<string, ConnectFailure>();
+
+export function getConnectFailure(channelId: string): ConnectFailure | undefined {
+  return connectFailures.get(channelId);
+}
+
+export function clearConnectFailure(channelId: string) {
+  connectFailures.delete(channelId);
+}
+
+/**
+ * fresh=false: reiniciou com a credencial salva (pode ter sido desconectada no celular).
+ * fresh=true: sessão nova, sem credencial, e mesmo assim nem gerou QR: o problema é o
+ * próprio WAHA (tipicamente versão antiga recusada pelo WhatsApp).
+ */
+export async function recordConnectFailure(channelId: string, fresh: boolean): Promise<ConnectFailure> {
+  let failure: ConnectFailure;
+  if (!fresh) {
+    failure = {
+      code: "SESSION_FAILED",
+      error:
+        "A sessão salva não conectou. Se o aparelho foi desconectado no celular (Aparelhos conectados), ela não volta mais: gere um novo QR code.",
+      at: new Date().toISOString(),
+    };
+  } else {
+    let version = "";
+    try {
+      const info = await waha.getServerVersion();
+      version = info.version ? ` ${info.version}` : "";
+    } catch {
+      // versão é só informativa
+    }
+    failure = {
+      code: "WAHA_CANNOT_CONNECT",
+      error: `O servidor do WhatsApp (WAHA${version}) não conseguiu se conectar ao WhatsApp nem para gerar o QR code. Isso acontece quando o WAHA fica desatualizado e o WhatsApp passa a recusá-lo: atualize o serviço "whatsapp" e tente de novo.`,
+      at: new Date().toISOString(),
+    };
+  }
+  connectFailures.set(channelId, failure);
+  return failure;
 }
 
 /** O webhook configurado na sessão entrega os eventos do app, com o segredo (se houver). */
@@ -141,6 +223,9 @@ export async function checkWhatsappChannelHealth(
   const becameWorking = status === ChannelStatus.WORKING && channel.status !== ChannelStatus.WORKING;
   const changed = await persistChannelStatus(channel, status, phoneNumber);
 
+  if (session.status === "WORKING" || session.status === "SCAN_QR_CODE") clearConnectFailure(channel.id);
+  const failure = session.status === "FAILED" ? getConnectFailure(channel.id) : undefined;
+
   let webhookOk = isSessionWebhookOk(session, webhookUrl);
   let webhookRepaired: boolean | undefined;
 
@@ -169,6 +254,14 @@ export async function checkWhatsappChannelHealth(
     me: phoneNumber ? { phoneNumber, pushName: session.me?.pushName ?? null } : null,
     webhookOk,
     ...(webhookRepaired ? { webhookRepaired } : {}),
+    ...(session.status === "FAILED"
+      ? {
+          error:
+            failure?.error ??
+            "A conexão com o WhatsApp falhou. Tente reconectar; se não resolver, gere um novo QR code.",
+          ...(failure ? { failure } : {}),
+        }
+      : {}),
     changed,
   };
 }

@@ -21,10 +21,19 @@ type Phase =
   | { kind: "qr"; src: string }
   | { kind: "connected"; phone: string | null; already: boolean }
   | { kind: "expired" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; code?: api.ChannelConnectFailure["code"] };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const qrSrc = (qr: string) => (qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`);
+class ConnectError extends Error {
+  constructor(
+    message: string,
+    readonly code: api.ChannelConnectFailure["code"],
+  ) {
+    super(message);
+  }
+}
+
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : "Erro desconhecido");
 
 /**
@@ -40,7 +49,7 @@ export function ConnectChannelDialog({
 }) {
   const qc = useQueryClient();
   const [phase, setPhase] = useState<Phase>({ kind: "checking" });
-  const [attempt, setAttempt] = useState(0);
+  const [attempt, setAttempt] = useState({ n: 0, fresh: false });
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -53,6 +62,7 @@ export function ConnectChannelDialog({
     const deadline = Date.now() + CONNECT_TIMEOUT_MS;
     let qrFetchedAt = 0;
     let restarted = false;
+    let fresh = attempt.fresh;
 
     const refresh = () => {
       void qc.invalidateQueries({ queryKey: channelKeys.list });
@@ -62,14 +72,21 @@ export function ConnectChannelDialog({
     const restart = async () => {
       setPhase({ kind: "starting" });
       restarted = true;
-      await api.reconnectChannel(channelId);
+      // A API espera a sessão assentar: falha aqui já vem com diagnóstico
+      const result = await api.reconnectChannel(channelId, { fresh });
       refresh();
+      if (result.failure) throw new ConnectError(result.failure.error, result.failure.code);
       return api.getChannelHealth(channelId);
     };
 
     const run = async () => {
       try {
         let health = await api.getChannelHealth(channelId);
+        // Se o próprio WAHA já falhou com sessão nova, reiniciar a antiga não ajuda
+        if (health.failure?.code === "WAHA_CANNOT_CONNECT") fresh = true;
+        if (fresh) {
+          health = await restart();
+        }
         const alreadyConnected = health.wahaStatus === "WORKING";
 
         for (;;) {
@@ -123,7 +140,13 @@ export function ConnectChannelDialog({
           health = await api.getChannelHealth(channelId);
         }
       } catch (error) {
-        if (!cancelled) setPhase({ kind: "error", message: errorMessage(error) });
+        if (!cancelled) {
+          setPhase({
+            kind: "error",
+            message: errorMessage(error),
+            code: error instanceof ConnectError ? error.code : undefined,
+          });
+        }
       }
     };
 
@@ -133,18 +156,30 @@ export function ConnectChannelDialog({
     };
   }, [channelId, attempt, qc]);
 
-  const retry = () => {
+  const retry = (fresh = false) => {
     setPhase({ kind: "checking" });
-    setAttempt((n) => n + 1);
+    setAttempt((a) => ({ n: a.n + 1, fresh }));
   };
 
   const footer =
-    phase.kind === "expired" || phase.kind === "error" ? (
+    phase.kind === "error" && phase.code === "SESSION_FAILED" ? (
       <>
         <Button variant="ghost" onClick={onClose}>
           Fechar
         </Button>
-        <Button onClick={retry}>{phase.kind === "expired" ? "Gerar novo QR" : "Tentar novamente"}</Button>
+        <Button variant="ghost" onClick={() => retry()}>
+          Tentar de novo
+        </Button>
+        <Button onClick={() => retry(true)}>Gerar novo QR</Button>
+      </>
+    ) : phase.kind === "expired" || phase.kind === "error" ? (
+      <>
+        <Button variant="ghost" onClick={onClose}>
+          Fechar
+        </Button>
+        <Button onClick={() => retry(phase.kind === "error" && phase.code === "WAHA_CANNOT_CONNECT")}>
+          {phase.kind === "expired" ? "Gerar novo QR" : "Tentar novamente"}
+        </Button>
       </>
     ) : (
       <Button variant={phase.kind === "connected" ? "primary" : "ghost"} onClick={onClose}>
@@ -217,7 +252,13 @@ export function ConnectChannelDialog({
               <AlertTriangle className="size-7" />
             </span>
             <div className="max-w-sm">
-              <p className="text-sm font-semibold text-fg">Não foi possível conectar</p>
+              <p className="text-sm font-semibold text-fg">
+                {phase.code === "WAHA_CANNOT_CONNECT"
+                  ? "O servidor do WhatsApp precisa de atualização"
+                  : phase.code === "SESSION_FAILED"
+                    ? "A conexão salva não funciona mais"
+                    : "Não foi possível conectar"}
+              </p>
               <p className="mt-1 text-sm text-fg-muted">{phase.message}</p>
             </div>
           </>

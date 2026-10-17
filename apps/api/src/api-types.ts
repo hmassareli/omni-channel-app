@@ -193,6 +193,15 @@ export interface ChannelHealthResponse {
   webhookRepaired?: boolean;
   checkedAt: string;
   error?: string;
+  /** Diagnóstico da última tentativa de conexão que falhou (status FAILED). */
+  failure?: ChannelConnectFailure;
+}
+
+export interface ChannelConnectFailure {
+  /** SESSION_FAILED: credencial salva não conectou; WAHA_CANNOT_CONNECT: nem sessão nova gera QR. */
+  code: "SESSION_FAILED" | "WAHA_CANNOT_CONNECT";
+  error: string;
+  at: string;
 }
 
 export interface ReconnectChannelResponse {
@@ -202,6 +211,8 @@ export interface ReconnectChannelResponse {
   /** A sessão não existia no WAHA e foi recriada (precisa escanear o QR). */
   recreated: boolean;
   webhookConfigured: boolean;
+  /** Presente quando a sessão terminou em FAILED. */
+  failure?: ChannelConnectFailure;
 }
 
 export interface CreateWhatsAppChannelResponse {

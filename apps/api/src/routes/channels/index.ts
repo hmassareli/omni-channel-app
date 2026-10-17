@@ -11,13 +11,16 @@ import {
 import { syncWhatsAppChats } from "../../channels/whatsapp-waha/sync";
 import {
   checkWhatsappChannelHealth,
+  clearConnectFailure,
   emitChannelUpdated,
   lastInboundAtByChannel,
   mapWahaStatusToChannelStatus,
   persistChannelStatus,
+  recordConnectFailure,
+  settleSessionStatus,
   type WhatsappChannelRecord,
 } from "../../channels/whatsapp-waha/health";
-import type { ChannelHealthResponse } from "../../api-types";
+import type { ChannelHealthResponse, ReconnectChannelResponse } from "../../api-types";
 
 // ============================================================================
 // Schemas de validação
@@ -33,6 +36,13 @@ const createChannelSchema = z.object({
 const channelParamsSchema = z.object({
   id: z.uuid("ID inválido"),
 });
+
+const reconnectBodySchema = z
+  .object({
+    /** Descarta a credencial salva e começa do zero (novo QR code). */
+    fresh: z.boolean().optional(),
+  })
+  .optional();
 
 /** Conectar/reconectar/remover canais: só ADMIN e MANAGER. AGENT só consulta. */
 const manage = [authMiddleware, requireRole("ADMIN", "MANAGER")];
@@ -308,18 +318,21 @@ export async function channelsRoutes(app: FastifyInstance) {
       ...(health.webhookOk !== undefined ? { webhookOk: health.webhookOk } : {}),
       ...(health.webhookRepaired ? { webhookRepaired: true } : {}),
       ...(health.error ? { error: health.error } : {}),
+      ...(health.failure ? { failure: health.failure } : {}),
     };
     return reply.send(body);
   });
 
   /**
-   * POST /channels/:id/reconnect
-   * Reinicia a sessão; se ela não existir mais no WAHA, recria com o mesmo nome
-   * e configura o webhook (o QR precisa ser escaneado de novo).
+   * POST /channels/:id/reconnect   body: { fresh?: boolean }
+   * Reinicia a sessão com a credencial salva; se ela não existir mais no WAHA, recria.
+   * fresh=true apaga a sessão e recria do zero (credencial descartada, novo QR).
+   * Espera a sessão assentar (QR, conectada ou falha) para responder o resultado real.
    */
   app.post("/:id/reconnect", { preHandler: manage }, async (request, reply) => {
     const user = request.user!;
     const { id } = channelParamsSchema.parse(request.params);
+    const fresh = reconnectBodySchema.parse(request.body)?.fresh === true;
 
     const found = await findOwnedChannel(id, user, reply);
     if (!found) return reply;
@@ -346,6 +359,12 @@ export async function channelsRoutes(app: FastifyInstance) {
         await waha.getSession(sessionName);
       } catch (error) {
         if (!waha.isWahaSessionNotFound(error)) throw error;
+        exists = false;
+      }
+
+      if (exists && fresh) {
+        // Apagar a sessão descarta a credencial antiga (ex.: aparelho removido no celular)
+        await waha.deleteSession(sessionName);
         exists = false;
       }
 
@@ -377,9 +396,17 @@ export async function channelsRoutes(app: FastifyInstance) {
         wahaSession = await waha.startSession(sessionName);
       }
 
+      wahaSession = await settleSessionStatus(sessionName, wahaSession);
+
       const newStatus = mapWahaStatusToChannelStatus(wahaSession.status);
       const phoneNumber = wahaSession.me?.id?.split("@")[0] || null;
       await persistChannelStatus(channel, newStatus, phoneNumber);
+
+      // Sessão recriada (sem credencial) que falha = problema no próprio WAHA
+      const failure =
+        wahaSession.status === "FAILED" ? await recordConnectFailure(channel.id, !exists) : undefined;
+      if (!failure) clearConnectFailure(channel.id);
+      if (failure) emitChannelUpdated(channel);
 
       if (wahaSession.status === "WORKING") {
         syncWhatsAppChats(channel.id, sessionName).catch((error) => {
@@ -387,13 +414,15 @@ export async function channelsRoutes(app: FastifyInstance) {
         });
       }
 
-      return reply.send({
+      const body: ReconnectChannelResponse = {
         channelId: channel.id,
         status: newStatus,
         wahaStatus: wahaSession.status,
         recreated: !exists,
         webhookConfigured,
-      });
+        ...(failure ? { failure } : {}),
+      };
+      return reply.send(body);
     } catch (error) {
       console.error("[Channels] Erro ao reconectar:", error);
 

@@ -35,6 +35,7 @@ import type {
   Pagination,
   QRCodeResponse,
   ReconnectChannelResponse,
+  ChannelConnectFailure,
   ReorderStagesResponse,
   Stage,
   StageWithRelations,
@@ -89,6 +90,7 @@ export type {
   Pagination,
   QRCodeResponse,
   ReconnectChannelResponse,
+  ChannelConnectFailure,
   Stage,
   StageWithRelations,
   WhatsAppChat,
@@ -278,11 +280,15 @@ export async function getChannelStatus(
   );
 }
 
-/** Reinicia a sessão; se ela não existir mais no WAHA, é recriada (novo QR). */
+/**
+ * Reinicia a sessão; se ela não existir mais no WAHA, é recriada (novo QR).
+ * fresh=true descarta a credencial salva e recomeça do zero.
+ */
 export async function reconnectChannel(
   channelId: string,
+  options: { fresh?: boolean } = {},
 ): Promise<ReconnectChannelResponse> {
-  return apiRequest<ReconnectChannelResponse>("POST", `/channels/${channelId}/reconnect`);
+  return apiRequest<ReconnectChannelResponse>("POST", `/channels/${channelId}/reconnect`, options);
 }
 
 export async function deleteChannel(channelId: string): Promise<void> {
