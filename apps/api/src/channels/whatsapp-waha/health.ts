@@ -3,7 +3,9 @@ import { emitDeskEvent } from "../../events/bus";
 import { prisma } from "../../prisma";
 import { syncWhatsAppChats } from "./sync";
 import * as waha from "./waha";
-import { ensureWhatsappSessionWebhook, resolveWhatsappWebhookUrl } from "./webhook-config";
+import { ensureWhatsappSessionWebhook, isSessionWebhookOk } from "./webhook-config";
+
+export { isSessionWebhookOk };
 
 export type WhatsappChannelRecord = Channel & { whatsappDetails: WhatsAppChannel };
 
@@ -121,30 +123,6 @@ export async function recordConnectFailure(channelId: string, fresh: boolean): P
   }
   connectFailures.set(channelId, failure);
   return failure;
-}
-
-/** O webhook configurado na sessão entrega os eventos do app, com o segredo (se houver). */
-export function isSessionWebhookOk(
-  session: waha.WAHASession,
-  storedWebhookUrl: string | null,
-): boolean | undefined {
-  const expected = resolveWhatsappWebhookUrl(storedWebhookUrl);
-  if (!expected) return undefined;
-  const secret = process.env.WEBHOOK_SECRET;
-  return (session.config?.webhooks ?? []).some((hook) => {
-    if (hook.url !== expected) return false;
-    const events = hook.events ?? [];
-    const hasMessages = events.includes("message.any") || events.includes("message");
-    if (!hasMessages || !events.includes("session.status") || !events.includes("message.ack")) {
-      return false; // sessão antiga sem ack: será reconfigurada
-    }
-    if (!secret) return true;
-    const header = (hook.customHeaders ?? []).find(
-      (h) => h.name.toLowerCase() === "x-webhook-secret",
-    );
-    // Algumas versões do WAHA podem omitir o valor; o nome do header já basta.
-    return !!header && (header.value === undefined || header.value === secret);
-  });
 }
 
 /** Emite channel.updated para a operação dona do canal. */

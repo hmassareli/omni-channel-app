@@ -58,7 +58,7 @@ const webhookBodySchema = z
         id: z.string(),
       })
       .loose()
-      .optional(),
+      .nullish(), // WAHA manda null enquanto a sessão não autenticou
     payload: payloadSchema,
   })
   .loose();
@@ -77,7 +77,7 @@ const sessionStatusWebhookSchema = z.object({
       id: z.string().optional(),
       pushName: z.string().optional(),
     })
-    .optional(),
+    .nullish(), // null em STARTING/SCAN_QR_CODE
   payload: z.object({
     status: z.enum([
       "STOPPED",

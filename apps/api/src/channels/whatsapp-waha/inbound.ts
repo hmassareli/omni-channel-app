@@ -183,8 +183,9 @@ export async function handleWhatsappStatus(event: StatusEvent): Promise<void> {
     `[Webhook] Canal ${whatsappChannel.channel.name} atualizado: ${event.status}`,
   );
 
-  // Se acabou de conectar (WORKING), dispara sync dos chats
-  if (event.status === "WORKING") {
+  // Se acabou de conectar (WORKING), dispara sync dos chats. WORKING repetido não
+  // refaz nada: reaplicar o webhook reinicia a sessão e gerava um loop.
+  if (event.status === "WORKING" && previous.status !== "WORKING") {
     console.log(
       `[Webhook] Sessão ${session} conectada - iniciando sync de chats...`,
     );

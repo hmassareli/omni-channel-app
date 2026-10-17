@@ -320,6 +320,25 @@ describe("POST /webhooks/whatsapp", () => {
       expect(syncChats).toHaveBeenCalledWith(channel.id, "sessao-1");
     });
 
+    it("WORKING repetido não reaplica o webhook nem refaz o sync (evita loop de reinício)", async () => {
+      await prisma.channel.create({
+        data: { name: "WA", type: "WHATSAPP", whatsappDetails: { create: { sessionName: "sessao-1" } } },
+      });
+      await http.post("/webhooks/whatsapp", auth, statusBody("WORKING"));
+      await http.post("/webhooks/whatsapp", auth, statusBody("WORKING"));
+      expect(ensureWebhook).toHaveBeenCalledTimes(1);
+      expect(syncChats).toHaveBeenCalledTimes(1);
+    });
+
+    it("aceita me: null (sessão ainda não autenticada)", async () => {
+      const channel = await prisma.channel.create({
+        data: { name: "WA", type: "WHATSAPP", whatsappDetails: { create: { sessionName: "sessao-1" } } },
+      });
+      const res = await http.post("/webhooks/whatsapp", auth, { ...statusBody("STARTING"), me: null });
+      expect(res.statusCode).toBe(202);
+      expect((await prisma.channel.findUniqueOrThrow({ where: { id: channel.id } })).status).toBe("CONNECTING");
+    });
+
     it("sessão desconhecida não falha (202) nem cria canal", async () => {
       const res = await http.post("/webhooks/whatsapp", auth, statusBody("WORKING"));
       expect(res.statusCode).toBe(202);
